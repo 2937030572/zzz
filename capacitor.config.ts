@@ -4,13 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.tracker.traderecords',
   appName: '交易记录',
   webDir: 'public',
-  bundledWebRuntime: false,
-  server: {
-    // 使用本地开发服务器
-    url: 'http://localhost:5000',
-    cleartext: true,
-    androidScheme: 'http',
-  },
   android: {
     buildOptions: {
       signingType: 'apksigner',
