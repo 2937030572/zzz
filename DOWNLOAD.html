@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下载交易记录 APP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            margin-bottom: 30px;
+            border-radius: 5px;
+        }
+        .warning h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .warning p {
+            color: #856404;
+            line-height: 1.6;
+        }
+        .method {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 2px solid #e9ecef;
+        }
+        .method h2 {
+            color: #495057;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        .method h2 .icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+        .method p {
+            color: #6c757d;
+            line-height: 1.8;
+            margin-bottom: 15px;
+        }
+        .steps {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .steps ol {
+            margin-left: 20px;
+        }
+        .steps li {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        .steps code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        .badge.secondary {
+            background: #6c757d;
+        }
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px 20px;
+            margin-top: 15px;
+            border-radius: 5px;
+        }
+        .note p {
+            color: #0c5460;
+            margin: 0;
+        }
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #6c757d;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 交易记录 APP 下载</h1>
+
+        <div class="warning">
+            <h3>⚠️ 重要提示</h3>
+            <p>当前应用使用本地数据库，无法直接打包成可用的 APK。你需要先将应用部署到服务器，然后才能生成可在手机上使用的安装包。</p>
+        </div>
+
+        <div class="method">
+            <h2><span class="icon">⚡</span> 方法 1: 使用 PWA（最简单，5分钟）<span class="badge">推荐</span></h2>
+            <p>不需要下载 APK，直接在浏览器中使用，体验与原生应用相似。</p>
+            <div class="steps">
+                <ol>
+                    <li>将应用部署到 Vercel（免费）：<code>vercel --prod</code></li>
+                    <li>在手机浏览器打开部署后的 URL</li>
+                    <li>点击浏览器菜单，选择"添加到主屏幕"</li>
+                    <li>完成！应用图标会出现在手机主屏幕</li>
+                </ol>
+            </div>
+            <a href="#" class="button">立即使用 PWA</a>
+        </div>
+
+        <div class="method">
+            <h2><span class="icon">📦</span> 方法 2: 下载 Android APK</h2>
+            <p>在电脑上构建 APK 文件，然后安装到手机。</p>
+            <div class="steps">
+                <ol>
+                    <li>在你的电脑上安装 Android Studio</li>
+                    <li>运行构建脚本：<code>./scripts/build-apk.sh</code></li>
+                    <li>APK 文件会生成在 <code>android/app/build/outputs/apk/debug/</code></li>
+                    <li>通过 USB 传输或云盘下载到手机</li>
+                    <li>在手机上安装 APK 文件</li>
+                </ol>
+            </div>
+            <div class="note">
+                <p><strong>⚠️ 注意：</strong>构建 APK 需要先部署应用到服务器并修改配置，否则无法正常使用。</p>
+            </div>
+        </div>
+
+        <div class="method">
+            <h2><span class="icon">🔗</span> 方法 3: 使用在线构建服务<span class="badge secondary">高级</span></h2>
+            <p>使用云服务自动构建 APK，无需本地环境。</p>
+            <div class="steps">
+                <ol>
+                    <li>将代码推送到 GitHub</li>
+                    <li>配置 GitHub Actions 自动构建</li>
+                    <li>从构建 artifacts 下载 APK</li>
+                </ol>
+            </div>
+            <div class="note">
+                <p><strong>💡 提示：</strong>查看 <code>BUILD_APK_GUIDE.md</code> 获取 GitHub Actions 配置示例。</p>
+            </div>
+        </div>
+
+        <div class="method">
+            <h2><span class="icon">🍎</span> 方法 4: iOS App</h2>
+            <p>需要 Mac 电脑和 Xcode。</p>
+            <div class="steps">
+                <ol>
+                    <li>安装 Xcode（需要 macOS）</li>
+                    <li>运行：<code>pnpm run cap:ios</code></li>
+                    <li>在 Xcode 中运行或打包</li>
+                </ol>
+            </div>
+            <div class="note">
+                <p><strong>⚠️ 注意：</strong>iOS 开发必须使用 Mac 和 Xcode。</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>📖 详细文档：<a href="BUILD_APK_GUIDE.md" style="color: #667eea;">BUILD_APK_GUIDE.md</a> | <a href="MOBILE_APP_GUIDE.md" style="color: #667eea;">MOBILE_APP_GUIDE.md</a> | <a href="QUICK_START.md" style="color: #667eea;">QUICK_START.md</a></p>
+            <p style="margin-top: 10px;">💰 交易记录 APP - 记录每一次交易的策略、盈亏和平仓原因</p>
+        </div>
+    </div>
+</body>
+</html>
