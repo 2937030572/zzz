@@ -1,4 +1,4 @@
-import { eq, and, desc, SQL } from "drizzle-orm";
+import { eq, and, SQL, sql } from "drizzle-orm";
 import { getDb } from "coze-coding-dev-sdk";
 import { trades, insertTradeSchema, updateTradeSchema } from "./shared/schema";
 import type { Trade, InsertTrade, UpdateTrade } from "./shared/schema";
@@ -9,44 +9,44 @@ export class TradeManager {
     const db = await getDb(schema);
     const validated = insertTradeSchema.parse(data);
     const [trade] = await db.insert(trades).values(validated).returning();
-    return trade;
+    return { ...trade, openAmount: Number(trade.openAmount), profitLoss: Number(trade.profitLoss) } as unknown as Trade;
   }
 
   async getTrades(options: {
     skip?: number;
     limit?: number;
-    symbol?: string;
-    isClosed?: boolean;
+    filters?: Partial<Pick<Trade, 'isClosed' | 'date'>>
   } = {}): Promise<Trade[]> {
-    const { skip = 0, limit = 100, symbol, isClosed } = options;
+    const { skip = 0, limit = 100, filters = {} } = options;
     const db = await getDb(schema);
 
     const conditions: SQL[] = [];
-    if (symbol !== undefined) {
-      conditions.push(eq(trades.symbol, symbol));
+    if (filters.isClosed !== undefined) {
+      conditions.push(eq(trades.isClosed, filters.isClosed));
     }
-    if (isClosed !== undefined) {
-      conditions.push(eq(trades.isClosed, isClosed));
-    }
-
-    if (conditions.length > 0) {
-      return db.select().from(trades)
-        .where(and(...conditions))
-        .orderBy(desc(trades.entryTime))
-        .limit(limit)
-        .offset(skip);
+    if (filters.date !== undefined) {
+      conditions.push(eq(trades.date, filters.date));
     }
 
-    return db.select().from(trades)
-      .orderBy(desc(trades.entryTime))
-      .limit(limit)
-      .offset(skip);
+    const results = await db.query.trades.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      limit,
+      offset: skip,
+    });
+
+    // 在内存中按创建时间倒序排序
+    return results
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map(r => ({ ...r, openAmount: Number(r.openAmount), profitLoss: Number(r.profitLoss) })) as unknown as Trade[];
   }
 
   async getTradeById(id: string): Promise<Trade | null> {
     const db = await getDb(schema);
-    const [trade] = await db.select().from(trades).where(eq(trades.id, id));
-    return trade || null;
+    const trade = await db.query.trades.findFirst({
+      where: eq(trades.id, id),
+    });
+    if (!trade) return null;
+    return { ...trade, openAmount: Number(trade.openAmount), profitLoss: Number(trade.profitLoss) } as unknown as Trade;
   }
 
   async updateTrade(id: string, data: UpdateTrade): Promise<Trade | null> {
@@ -57,7 +57,9 @@ export class TradeManager {
       .set({ ...validated, updatedAt: new Date() })
       .where(eq(trades.id, id))
       .returning();
-    return trade || null;
+
+    if (!trade) return null;
+    return { ...trade, openAmount: Number(trade.openAmount), profitLoss: Number(trade.profitLoss) } as unknown as Trade;
   }
 
   async deleteTrade(id: string): Promise<boolean> {
@@ -66,42 +68,20 @@ export class TradeManager {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getTradeStats(): Promise<{
-    totalTrades: number;
-    totalProfitLoss: string;
-    closedTrades: number;
-    openTrades: number;
-    winningTrades: number;
-    losingTrades: number;
-  }> {
+  async getTradesByDateRange(startDate: string, endDate: string): Promise<Trade[]> {
     const db = await getDb(schema);
-    const allTrades = await db.select().from(trades);
-
-    const totalTrades = allTrades.length;
-    const closedTrades = allTrades.filter(t => t.isClosed).length;
-    const openTrades = allTrades.filter(t => !t.isClosed).length;
-
-    let totalProfitLoss = "0";
-    let winningTrades = 0;
-    let losingTrades = 0;
-
-    allTrades.forEach(trade => {
-      if (trade.profitLoss !== null) {
-        const pl = parseFloat(trade.profitLoss);
-        totalProfitLoss = (parseFloat(totalProfitLoss) + pl).toString();
-        if (pl > 0) winningTrades++;
-        if (pl < 0) losingTrades++;
-      }
+    const results = await db.query.trades.findMany({
+      where: and(
+        eq(trades.isClosed, true),
+        sql`${trades.date} >= ${startDate}`,
+        sql`${trades.date} <= ${endDate}`
+      ),
     });
 
-    return {
-      totalTrades,
-      totalProfitLoss,
-      closedTrades,
-      openTrades,
-      winningTrades,
-      losingTrades,
-    };
+    // 在内存中按创建时间倒序排序
+    return results
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map(r => ({ ...r, openAmount: Number(r.openAmount), profitLoss: Number(r.profitLoss) })) as unknown as Trade[];
   }
 }
 
