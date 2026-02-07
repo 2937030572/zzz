@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "coze-coding-dev-sdk";
 import { balance } from "@/storage/database/shared/schema";
 import { eq } from "drizzle-orm";
+import * as schema from "@/storage/database/shared/schema";
 
 // GET /api/balance - 获取当前资产余额
 export async function GET() {
   try {
-    const db = await getDb();
+    const db = await getDb(schema);
     const result = await db.select().from(balance).limit(1);
 
     if (result.length === 0) {
@@ -40,7 +41,7 @@ export async function GET() {
 // POST /api/balance - 创建或更新资产余额
 export async function POST(request: NextRequest) {
   try {
-    const db = await getDb();
+    const db = await getDb(schema);
     const body = await request.json();
     const { amount, withdrawalAmount } = body;
 

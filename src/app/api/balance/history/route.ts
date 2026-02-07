@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "coze-coding-dev-sdk";
 import { trades, balance } from "@/storage/database/shared/schema";
 import { desc, eq } from "drizzle-orm";
+import * as schema from "@/storage/database/shared/schema";
 
 // GET /api/balance/history - 获取资产历史数据
 export async function GET() {
   try {
-    const db = await getDb();
+    const db = await getDb(schema);
 
     // 获取初始资产余额
     const balanceResult = await db.select().from(balance).limit(1);

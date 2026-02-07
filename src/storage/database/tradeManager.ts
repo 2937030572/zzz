@@ -2,23 +2,24 @@ import { eq, and, desc, SQL } from "drizzle-orm";
 import { getDb } from "coze-coding-dev-sdk";
 import { trades, insertTradeSchema, updateTradeSchema } from "./shared/schema";
 import type { Trade, InsertTrade, UpdateTrade } from "./shared/schema";
+import * as schema from "./shared/schema";
 
 export class TradeManager {
   async createTrade(data: InsertTrade): Promise<Trade> {
-    const db = await getDb();
+    const db = await getDb(schema);
     const validated = insertTradeSchema.parse(data);
     const [trade] = await db.insert(trades).values(validated).returning();
     return trade;
   }
 
-  async getTrades(options: { 
-    skip?: number; 
+  async getTrades(options: {
+    skip?: number;
     limit?: number;
     symbol?: string;
     isClosed?: boolean;
   } = {}): Promise<Trade[]> {
     const { skip = 0, limit = 100, symbol, isClosed } = options;
-    const db = await getDb();
+    const db = await getDb(schema);
 
     const conditions: SQL[] = [];
     if (symbol !== undefined) {
@@ -43,13 +44,13 @@ export class TradeManager {
   }
 
   async getTradeById(id: string): Promise<Trade | null> {
-    const db = await getDb();
+    const db = await getDb(schema);
     const [trade] = await db.select().from(trades).where(eq(trades.id, id));
     return trade || null;
   }
 
   async updateTrade(id: string, data: UpdateTrade): Promise<Trade | null> {
-    const db = await getDb();
+    const db = await getDb(schema);
     const validated = updateTradeSchema.parse(data);
     const [trade] = await db
       .update(trades)
@@ -60,7 +61,7 @@ export class TradeManager {
   }
 
   async deleteTrade(id: string): Promise<boolean> {
-    const db = await getDb();
+    const db = await getDb(schema);
     const result = await db.delete(trades).where(eq(trades.id, id));
     return (result.rowCount ?? 0) > 0;
   }
@@ -73,7 +74,7 @@ export class TradeManager {
     winningTrades: number;
     losingTrades: number;
   }> {
-    const db = await getDb();
+    const db = await getDb(schema);
     const allTrades = await db.select().from(trades);
 
     const totalTrades = allTrades.length;
