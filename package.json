@@ -101,10 +101,10 @@
     "@capacitor/core": "^8.0.2",
     "@capacitor/ios": "^8.0.2"
   },
-  "packageManager": "pnpm@8.15.6",
+  "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=18.17.0",
-    "pnpm": ">=8.0.0 <9.0.0"
+    "pnpm": ">=9.0.0"
   },
   "pnpm": {
     "overrides": {
@@ -155,7 +155,6 @@
   "vercel": {
     "buildCommand": "pnpm vercel-build",
     "outputDirectory": ".next",
-    "installCommand": "pnpm install --prod --ignore-optional",
-    "nodeVersion": "18.x"
+    "installCommand": "pnpm install --prod --ignore-optional"
   }
 }
