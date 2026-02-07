@@ -32,26 +32,27 @@ export const api = {
       if (!res.ok) throw new Error('Failed to fetch trades');
       return res.json();
     },
-    create: async (data: any) => {
+    create: async (data: any, expectedBalance?: number) => {
       const res = await fetch(`${API_BASE}/trades`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, expectedBalance }),
       });
       if (!res.ok) throw new Error('Failed to create trade');
       return res.json();
     },
-    update: async (id: string, data: any) => {
+    update: async (id: string, data: any, expectedBalance?: number) => {
       const res = await fetch(`${API_BASE}/trades`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...data }),
+        body: JSON.stringify({ id, ...data, expectedBalance }),
       });
       if (!res.ok) throw new Error('Failed to update trade');
       return res.json();
     },
-    delete: async (id: string) => {
-      const res = await fetch(`${API_BASE}/trades?id=${id}`, {
+    delete: async (id: string, expectedBalance?: number) => {
+      const query = expectedBalance ? `id=${id}&expectedBalance=${expectedBalance}` : `id=${id}`;
+      const res = await fetch(`${API_BASE}/trades?${query}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete trade');
@@ -71,17 +72,18 @@ export const api = {
       if (!res.ok) throw new Error('Failed to fetch fund records');
       return res.json();
     },
-    create: async (data: any) => {
+    create: async (data: any, expectedBalance?: number) => {
       const res = await fetch(`${API_BASE}/fund-records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, expectedBalance }),
       });
       if (!res.ok) throw new Error('Failed to create fund record');
       return res.json();
     },
-    delete: async (id: string) => {
-      const res = await fetch(`${API_BASE}/fund-records?id=${id}`, {
+    delete: async (id: string, expectedBalance?: number) => {
+      const query = expectedBalance ? `id=${id}&expectedBalance=${expectedBalance}` : `id=${id}`;
+      const res = await fetch(`${API_BASE}/fund-records?${query}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete fund record');

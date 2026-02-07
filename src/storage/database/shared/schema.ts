@@ -73,7 +73,10 @@ export const updateBalanceSchema = createCoercedInsertSchema(balance)
   .pick({
     amount: true,
   })
-  .partial();
+  .partial()
+  .extend({
+    amount: z.union([z.string(), z.number()]).transform(String),
+  });
 
 // Trade Schemas
 export const insertTradeSchema = createCoercedInsertSchema(trades)

@@ -52,6 +52,7 @@ export default function TradingApp() {
   const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false);
   const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
   const [fundAmount, setFundAmount] = useState<string>('');
+  const [fundDate, setFundDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // 交易表单状态
   const [symbol, setSymbol] = useState<string>('');
@@ -110,31 +111,43 @@ export default function TradingApp() {
   const handleAddFund = async (type: 'deposit' | 'withdraw') => {
     const amount = Number(fundAmount);
     if (!amount || amount <= 0) return;
+    if (!fundDate) return;
+
+    // 出金时检查余额是否足够
+    if (type === 'withdraw' && amount > balance) {
+      alert('余额不足，无法出金');
+      return;
+    }
 
     try {
-      // 创建出入金记录
-      const recordRes = await api.fundRecords.create({
-        type,
-        amount,
-        date: new Date().toISOString().split('T')[0],
-      });
+      // 创建出入金记录（后端会自动更新余额）
+      const recordRes = await api.fundRecords.create(
+        {
+          type,
+          amount,
+          date: fundDate,
+        },
+        balance // 传入当前余额作为预期余额，用于并发校验
+      );
 
-      // 更新余额
-      const newBalance = type === 'deposit' ? balance + amount : balance - amount;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
+      // 从响应中获取更新后的余额
+      const updatedBalance = recordRes.balance || (type === 'deposit' ? balance + amount : balance - amount);
+
+      // 更新余额状态
+      setBalance(updatedBalance);
 
       // 更新出入金记录列表
       setFundRecords([recordRes.record, ...fundRecords]);
 
       // 更新资产历史
       const historyRes = await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
+        date: fundDate,
+        value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
 
       setFundAmount('');
+      setFundDate(new Date().toISOString().split('T')[0]);
       if (type === 'deposit') {
         setIsDepositDialogOpen(false);
       } else {
@@ -152,13 +165,19 @@ export default function TradingApp() {
       const record = fundRecords.find(r => r.id === id);
       if (!record) return;
 
-      // 删除记录
-      await api.fundRecords.delete(id);
-
-      // 如果是入金，减去金额；如果是出金，加上金额
+      // 检查删除后余额是否为负数
       const newBalance = record.type === 'deposit' ? balance - record.amount : balance + record.amount;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
+      if (record.type === 'deposit' && newBalance < 0) {
+        alert('删除此入金记录会导致余额为负数，无法删除');
+        return;
+      }
+
+      // 删除记录（后端会自动更新余额并返回新的余额）
+      const deleteRes = await api.fundRecords.delete(id, balance); // 传入当前余额作为预期余额，用于并发校验
+
+      // 使用后端返回的余额值
+      const updatedBalance = deleteRes.balance ?? newBalance;
+      setBalance(updatedBalance);
 
       // 删除记录
       setFundRecords(fundRecords.filter(r => r.id !== id));
@@ -166,7 +185,7 @@ export default function TradingApp() {
       // 更新资产历史
       const historyRes = await api.equityHistory.create({
         date: new Date().toISOString(),
-        value: newBalance,
+        value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
     } catch (error) {
@@ -177,42 +196,57 @@ export default function TradingApp() {
 
   // 添加交易记录
   const handleAddTrade = async () => {
-    if (!symbol || !profitLoss || !openDateTime) return;
+    if (!symbol || !strategy || !profitLoss || !openDateTime) {
+      alert('请填写所有必填字段（交易品种、入场策略、盈亏金额、开仓日期）');
+      return;
+    }
+
+    const pl = Number(profitLoss);
+    if (isNaN(pl)) {
+      alert('盈亏金额必须是有效数字');
+      return;
+    }
+
+    // 检查亏损是否会导致余额为负数
+    if (pl < 0 && balance + pl < 0) {
+      alert('余额不足，无法添加此亏损交易');
+      return;
+    }
 
     try {
-      const pl = Number(profitLoss);
-
       // 将 openDateTime 拆分为 date 和 openTime
       const dateTime = new Date(openDateTime);
       const date = dateTime.toISOString().split('T')[0];
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
-      // 创建交易记录
-      const tradeRes = await api.trades.create({
-        symbol,
-        strategy,
-        position,
-        openAmount,
-        openTime: time,
-        closeReason,
-        remark: closeReason === 'other' ? remark : undefined,
-        profitLoss: pl,
-        date: date,
-        isClosed,
-      });
+      // 创建交易记录（后端会自动更新余额）
+      const tradeRes = await api.trades.create(
+        {
+          symbol,
+          strategy,
+          position,
+          openAmount,
+          openTime: time,
+          closeReason,
+          remark: closeReason === 'other' ? remark : undefined,
+          profitLoss: pl,
+          date: date,
+          isClosed,
+        },
+        balance // 传入当前余额作为预期余额，用于并发校验
+      );
 
-      // 更新余额
-      const newBalance = balance + pl;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
+      // 从响应中获取更新后的余额
+      const updatedBalance = tradeRes.balance || (balance + pl);
+      setBalance(updatedBalance);
 
       // 添加交易记录
       setTrades([tradeRes.trade, ...trades]);
 
-      // 更新资产历史
+      // 更新资产历史（使用交易记录的日期）
       const historyRes = await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
+        date: date,
+        value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
 
@@ -274,21 +308,27 @@ export default function TradingApp() {
       const tradeToDelete = trades.find(t => t.id === tradeId);
       if (!tradeToDelete) return;
 
-      // 删除交易记录
-      await api.trades.delete(tradeId);
-
-      // 更新余额
+      // 检查删除盈利交易后余额是否为负数
       const newBalance = balance - tradeToDelete.profitLoss;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
+      if (tradeToDelete.profitLoss > 0 && newBalance < 0) {
+        alert('删除此盈利交易会导致余额为负数，无法删除');
+        return;
+      }
+
+      // 删除交易记录（后端会自动更新余额并返回新的余额）
+      const deleteRes = await api.trades.delete(tradeId, balance); // 传入当前余额作为预期余额，用于并发校验
+
+      // 使用后端返回的余额值
+      const updatedBalance = deleteRes.balance ?? newBalance;
+      setBalance(updatedBalance);
 
       // 删除记录
       setTrades(trades.filter(t => t.id !== tradeId));
 
-      // 更新资产历史
+      // 更新资产历史（使用交易记录的日期）
       const historyRes = await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
+        date: tradeToDelete.date,
+        value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
     } catch (error) {
@@ -324,36 +364,46 @@ export default function TradingApp() {
       const oldProfitLoss = editingTrade.profitLoss;
       const newProfitLoss = Number(profitLoss);
 
+      // 检查编辑后余额是否为负数
+      const newBalance = balance - oldProfitLoss + newProfitLoss;
+      if (newBalance < 0) {
+        alert('修改后的盈亏会导致余额为负数，无法保存');
+        return;
+      }
+
       // 将 openDateTime 拆分为 date 和 openTime
       const dateTime = new Date(openDateTime);
       const date = dateTime.toISOString().split('T')[0];
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
-      // 更新交易记录
-      const updatedTradeRes = await api.trades.update(editingTrade.id, {
-        symbol,
-        strategy,
-        position,
-        openTime: time,
-        closeReason,
-        remark: closeReason === 'other' ? remark : undefined,
-        profitLoss: newProfitLoss,
-        date: date,
-        isClosed,
-      });
+      // 更新交易记录（后端会自动更新余额）
+      const updatedTradeRes = await api.trades.update(
+        editingTrade.id,
+        {
+          symbol,
+          strategy,
+          position,
+          openTime: time,
+          closeReason,
+          remark: closeReason === 'other' ? remark : undefined,
+          profitLoss: newProfitLoss,
+          date: date,
+          isClosed,
+        },
+        balance // 传入当前余额作为预期余额，用于并发校验
+      );
 
-      // 更新余额（新盈亏 - 旧盈亏）
-      const newBalance = balance - oldProfitLoss + newProfitLoss;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
+      // 从响应中获取更新后的余额
+      const updatedBalance = updatedTradeRes.balance ?? newBalance;
+      setBalance(updatedBalance);
 
       // 更新交易列表
       setTrades(trades.map(t => t.id === editingTrade.id ? updatedTradeRes.trade : t));
 
-      // 更新资产历史
+      // 更新资产历史（使用交易记录的日期）
       const historyRes = await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
+        date: date,
+        value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
 
@@ -433,8 +483,8 @@ export default function TradingApp() {
         {/* 标题和下载按钮 */}
         <div className="flex items-center justify-between">
           <div className="flex-1 rounded-xl border border-cyan-500/30 bg-gray-900/80 p-6 text-center shadow-[0_0_30px_rgba(6,182,212,0.2)] backdrop-blur-sm">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">交易记录系统</h1>
-            <p className="mt-2 text-cyan-500/70">管理您的交易记录和资产</p>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]">交易记录系统</h1>
+            <p className="mt-2 text-cyan-500/70 drop-shadow-[0_0_5px_rgba(6,182,212,0.5)]">管理您的交易记录和资产</p>
           </div>
           <div className="ml-4">
             <Button 
@@ -449,7 +499,7 @@ export default function TradingApp() {
         {/* 资产余额卡片 */}
         <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
           <CardHeader className="border-b border-cyan-500/20">
-            <CardTitle className="text-cyan-400">资产余额</CardTitle>
+            <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">资产余额</CardTitle>
             <CardDescription className="text-cyan-500/60">当前账户总余额</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
@@ -460,25 +510,36 @@ export default function TradingApp() {
                   <DialogTrigger asChild>
                     <Button className="bg-blue-600 hover:bg-blue-700">入金</Button>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent className="border-cyan-500/30 bg-gray-900 text-white">
                     <DialogHeader>
-                      <DialogTitle>入金</DialogTitle>
-                      <DialogDescription>请输入入金金额</DialogDescription>
+                      <DialogTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">入金</DialogTitle>
+                      <DialogDescription className="text-cyan-500/60">请输入入金金额和日期</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
-                        <Label htmlFor="deposit-amount">金额</Label>
+                        <Label htmlFor="deposit-amount" className="text-cyan-400">金额</Label>
                         <Input
                           id="deposit-amount"
                           type="number"
                           placeholder="请输入金额"
                           value={fundAmount}
                           onChange={(e) => setFundAmount(e.target.value)}
+                          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="deposit-date" className="text-cyan-400">日期</Label>
+                        <Input
+                          id="deposit-date"
+                          type="date"
+                          value={fundDate}
+                          onChange={(e) => setFundDate(e.target.value)}
+                          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
                         />
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => handleAddFund('deposit')}>确认入金</Button>
+                      <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700" onClick={() => handleAddFund('deposit')}>确认入金</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -487,25 +548,36 @@ export default function TradingApp() {
                   <DialogTrigger asChild>
                     <Button variant="destructive" className="bg-red-600 hover:bg-red-700">出金</Button>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent className="border-red-500/30 bg-gray-900 text-white">
                     <DialogHeader>
-                      <DialogTitle>出金</DialogTitle>
-                      <DialogDescription>请输入出金金额</DialogDescription>
+                      <DialogTitle className="bg-gradient-to-r from-red-400 to-orange-500 bg-clip-text text-transparent">出金</DialogTitle>
+                      <DialogDescription className="text-red-500/60">请输入出金金额和日期</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
-                        <Label htmlFor="withdraw-amount">金额</Label>
+                        <Label htmlFor="withdraw-amount" className="text-red-400">金额</Label>
                         <Input
                           id="withdraw-amount"
                           type="number"
                           placeholder="请输入金额"
                           value={fundAmount}
                           onChange={(e) => setFundAmount(e.target.value)}
+                          className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="withdraw-date" className="text-red-400">日期</Label>
+                        <Input
+                          id="withdraw-date"
+                          type="date"
+                          value={fundDate}
+                          onChange={(e) => setFundDate(e.target.value)}
+                          className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500"
                         />
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="destructive" className="bg-red-600 hover:bg-red-700" onClick={() => handleAddFund('withdraw')}>确认出金</Button>
+                      <Button className="bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700" onClick={() => handleAddFund('withdraw')}>确认出金</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -528,8 +600,8 @@ export default function TradingApp() {
               {/* 最近3条出入金记录 */}
               {fundRecords.length > 0 && (
                 <div className="rounded border border-cyan-500/30 bg-cyan-500/5 p-2">
-                  <div className="text-xs text-cyan-400/70 mb-2">最近记录（最新3条）</div>
-                  <div className="space-y-1">
+                  <div className="text-xs text-cyan-400/70 mb-2">最近记录（最新3条，滚动查看更多）</div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
                     {fundRecords.slice(0, 3).map((record) => (
                       <div key={record.id} className="flex items-center justify-between rounded bg-gray-800/50 px-2 py-1">
                         <div className="flex items-center gap-2">
@@ -563,7 +635,7 @@ export default function TradingApp() {
         {/* 资产走势图 */}
         <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
           <CardHeader className="border-b border-cyan-500/20">
-            <CardTitle className="text-cyan-400">资产走势图</CardTitle>
+            <CardTitle className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">资产走势图</CardTitle>
             <CardDescription className="text-cyan-500/60">减去出金后的资产变化趋势</CardDescription>
           </CardHeader>
           <CardContent>
@@ -571,14 +643,27 @@ export default function TradingApp() {
               {netEquity.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={netEquity}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(6,182,212,0.1)" />
-                    <XAxis dataKey="date" stroke="#06b6d4" />
-                    <YAxis stroke="#06b6d4" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(6,182,212,0.2)" />
+                    <XAxis dataKey="date" stroke="#22d3ee" tick={{ fill: '#22d3ee', fontSize: 12 }} />
+                    <YAxis stroke="#22d3ee" tick={{ fill: '#22d3ee', fontSize: 12 }} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: 'rgba(17, 24, 39, 0.9)', borderColor: '#06b6d4', borderWidth: 1 }}
-                      itemStyle={{ color: '#06b6d4' }}
+                      contentStyle={{ 
+                        backgroundColor: 'rgba(17, 24, 39, 0.95)', 
+                        borderColor: '#06b6d4', 
+                        borderWidth: 2,
+                        boxShadow: '0 0 20px rgba(6,182,212,0.3)'
+                      }}
+                      itemStyle={{ color: '#22d3ee', fontWeight: 'bold' }}
+                      labelStyle={{ color: '#06b6d4' }}
                     />
-                    <Line type="monotone" dataKey="value" stroke="#06b6d4" strokeWidth={2} dot={{ fill: '#06b6d4' }} activeDot={{ r: 6, fill: '#22d3ee', stroke: '#06b6d4', strokeWidth: 2 }} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="value" 
+                      stroke="#22d3ee" 
+                      strokeWidth={3} 
+                      dot={{ fill: '#22d3ee', r: 4, strokeWidth: 2 }} 
+                      activeDot={{ r: 8, fill: '#06b6d4', stroke: '#22d3ee', strokeWidth: 3 }} 
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -593,7 +678,7 @@ export default function TradingApp() {
         {/* 我的交易数据 */}
         <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
           <CardHeader className="border-b border-cyan-500/20">
-            <CardTitle className="text-cyan-400">我的交易数据</CardTitle>
+            <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">我的交易数据</CardTitle>
             <CardDescription className="text-cyan-500/60">交易统计信息</CardDescription>
           </CardHeader>
           <CardContent>
@@ -690,7 +775,7 @@ export default function TradingApp() {
           </DialogTrigger>
           <DialogContent className="border-cyan-500/30 bg-gray-900 text-white max-h-[90vh] flex flex-col">
             <DialogHeader>
-              <DialogTitle className="text-cyan-400">添加交易记录</DialogTitle>
+              <DialogTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">添加交易记录</DialogTitle>
               <DialogDescription className="text-cyan-500/60">填写交易信息</DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
@@ -812,7 +897,7 @@ export default function TradingApp() {
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="border-cyan-500/30 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col">
             <DialogHeader>
-              <DialogTitle className="text-cyan-400">编辑交易记录</DialogTitle>
+              <DialogTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">编辑交易记录</DialogTitle>
               <DialogDescription className="text-cyan-500/60">修改交易信息</DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
@@ -939,7 +1024,7 @@ export default function TradingApp() {
         {/* 交易记录列表 */}
         <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
           <CardHeader className="border-b border-cyan-500/20">
-            <CardTitle className="text-cyan-400">交易记录</CardTitle>
+            <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">交易记录</CardTitle>
             <CardDescription className="text-cyan-500/60">所有交易历史记录</CardDescription>
           </CardHeader>
           <CardContent>
