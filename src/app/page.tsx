@@ -89,43 +89,67 @@ export default function Home() {
   const fetchTrades = async () => {
     try {
       const response = await fetch('/api/trades');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       setTrades(data);
       setFilteredTrades(data);
     } catch (error) {
       console.error('Error fetching trades:', error);
+      setTrades([]);
+      setFilteredTrades([]);
     }
   };
 
   const fetchStats = async () => {
     try {
       const response = await fetch('/api/trades/stats');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       setStats(data);
     } catch (error) {
       console.error('Error fetching stats:', error);
+      setStats({
+        totalTrades: 0,
+        totalProfitLoss: '0',
+        closedTrades: 0,
+        openTrades: 0,
+        winningTrades: 0,
+        losingTrades: 0,
+      });
     }
   };
 
   const fetchBalance = async () => {
     try {
       const response = await fetch('/api/balance');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       setBalance(data.amount || '0');
       setWithdrawalAmount(data.withdrawalAmount || '0');
     } catch (error) {
       console.error('Error fetching balance:', error);
+      setBalance('0');
+      setWithdrawalAmount('0');
     }
   };
 
   const fetchCurrentBalance = async () => {
     try {
       const response = await fetch('/api/balance/history');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
-      setCurrentBalance(data.currentBalance?.toString() || balance);
+      setCurrentBalance(data.currentBalance?.toString() || '0');
     } catch (error) {
       console.error('Error fetching current balance:', error);
-      setCurrentBalance(balance);
+      setCurrentBalance('0');
     }
   };
 
@@ -159,10 +183,22 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchTrades();
-    fetchStats();
-    fetchBalance().finally(() => setLoading(false));
-    fetchCurrentBalance();
+    const loadAllData = async () => {
+      try {
+        await Promise.all([
+          fetchTrades(),
+          fetchStats(),
+          fetchBalance(),
+          fetchCurrentBalance(),
+        ]);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAllData();
   }, []);
 
   useEffect(() => {
@@ -272,7 +308,7 @@ export default function Home() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
-  };
+  }
 
   if (loading) {
     return (
