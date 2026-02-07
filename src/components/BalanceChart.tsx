@@ -44,10 +44,14 @@ export default function BalanceChart({ refreshTrigger = 0 }: BalanceChartProps) 
     try {
       setLoading(true);
       const response = await fetch('/api/balance/history');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       setHistory(data.history || []);
     } catch (error) {
       console.error('Error fetching balance history:', error);
+      setHistory([]);
     } finally {
       setLoading(false);
     }

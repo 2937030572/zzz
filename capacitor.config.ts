@@ -3,7 +3,8 @@ import { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.tracker.traderecords',
   appName: '交易记录',
-  webDir: 'public',
+  webDir: 'out',
+  bundledWebRuntime: false,
   android: {
     buildOptions: {
       signingType: 'apksigner',
@@ -24,6 +25,9 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: 'DARK',
     },
+    CapacitorHttp: {
+      enabled: true
+    }
   },
 };
 

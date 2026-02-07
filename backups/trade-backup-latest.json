@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "exportedAt": "2026-02-07T06:31:32Z",
+  "environment": "development",
+  "data": {
+    "balance": {"id":"b1ddbb2d-4df1-463a-8112-a7917e530944","amount":"70.00000000","withdrawalAmount":"43.00000000","createdAt":"2026-02-06T05:47:00.161Z","updatedAt":"2026-02-06T07:36:55.190Z"},
+    "trades": [{"id":"c6c7ac49-7b60-4173-9993-1fbe6503a710","symbol":"ETH2325看跌期权","direction":"买入","entryPrice":"0.00000000","exitPrice":null,"quantity":"1.00000000","strategySummary":"下跌中继形态","tradeLevel":"B","positionSize":"10%","profitLoss":"-20.00000000","exitReason":"其他原因","entryTime":"2026-02-02T16:00:00.000Z","exitTime":null,"notes":"自己没有坚定持有","isClosed":true,"createdAt":"2026-02-06T07:35:59.152Z","updatedAt":null},{"id":"7bb0cee2-e390-42ba-be2b-ba5d738b4162","symbol":"ETH2600看跌期权","direction":"买入","entryPrice":"0.00000000","exitPrice":null,"quantity":"1.00000000","strategySummary":"boll突破策略","tradeLevel":"A","positionSize":"15%","profitLoss":"60.00000000","exitReason":"正常止盈","entryTime":"2026-01-31T13:00:00.000Z","exitTime":null,"notes":null,"isClosed":true,"createdAt":"2026-02-06T07:34:18.751Z","updatedAt":null},{"id":"43af50db-259d-4154-8b48-a054f9b2520e","symbol":"ETH2750看涨期权","direction":"买入","entryPrice":"0.00000000","exitPrice":null,"quantity":"1.00000000","strategySummary":"下跌趋势，量能底背离，以为反弹","tradeLevel":"B","positionSize":"20%","profitLoss":"-30.00000000","exitReason":"其他原因","entryTime":"2026-01-30T07:30:00.000Z","exitTime":null,"notes":"不该在下跌趋势去做多，也并不符合我的交易策略，还重仓交易了","isClosed":true,"createdAt":"2026-02-06T07:31:54.091Z","updatedAt":"2026-02-06T12:24:21.215Z"},{"id":"4ad36ce0-0fbd-43eb-88e7-b68b356462ed","symbol":"ETH2900看跌期权","direction":"买入","entryPrice":"0.00000000","exitPrice":null,"quantity":"1.00000000","strategySummary":"boll收缩突破策略","tradeLevel":"A","positionSize":"20%","profitLoss":"63.00000000","exitReason":"正常止盈","entryTime":"2026-01-29T08:00:00.000Z","exitTime":null,"notes":null,"isClosed":true,"createdAt":"2026-02-06T07:29:52.013Z","updatedAt":null},{"id":"a89ca950-418c-4bf6-8170-5a417b951912","symbol":"ETH3025看涨期权","direction":"买入","entryPrice":"0.00000000","exitPrice":null,"quantity":"1.00000000","strategySummary":"符合boll策略","tradeLevel":"A","positionSize":"20%","profitLoss":"-20.00000000","exitReason":"其他原因","entryTime":"2026-01-28T15:00:00.000Z","exitTime":null,"notes":"没盯盘导致错过止盈","isClosed":true,"createdAt":"2026-02-06T07:28:01.977Z","updatedAt":null}]
+  },
+  "summary": {
+    "totalTrades": 5,
+    "backupFile": "/workspace/projects/backups/trade-backup-20260207_143132.json"
+  }
+}

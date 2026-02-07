@@ -75,6 +75,12 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
     },
   });
 
+  // 使用 watch 监控表单值，避免在渲染时多次调用
+  const entryTime = form.watch('entryTime');
+  const positionSize = form.watch('positionSize');
+  const isClosed = form.watch('isClosed');
+  const exitReason = form.watch('exitReason');
+
   useEffect(() => {
     if (trade) {
       form.reset({
@@ -135,8 +141,6 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
     }
   };
 
-  const isClosed = form.watch('isClosed');
-
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
       <div className="space-y-2">
@@ -159,12 +163,12 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
               variant="outline"
               className={cn(
                 'w-full justify-start text-left font-normal',
-                !form.watch('entryTime') && 'text-muted-foreground'
+                !entryTime && 'text-muted-foreground'
               )}
             >
               <CalendarIcon className="mr-2 h-4 w-4" />
-              {form.watch('entryTime') ? (
-                format(form.watch('entryTime'), 'yyyy-MM-dd HH:mm')
+              {entryTime ? (
+                format(entryTime, 'yyyy-MM-dd HH:mm')
               ) : (
                 <span>选择日期和时间</span>
               )}
@@ -173,13 +177,14 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
           <PopoverContent className="w-auto p-0" align="start">
             <Calendar
               mode="single"
-              selected={form.watch('entryTime')}
+              selected={entryTime}
               onSelect={(date) => {
                 if (date) {
-                  const currentEntryTime = form.watch('entryTime');
                   const newDate = new Date(date);
-                  newDate.setHours(currentEntryTime?.getHours() || new Date().getHours());
-                  newDate.setMinutes(currentEntryTime?.getMinutes() || new Date().getMinutes());
+                  if (entryTime) {
+                    newDate.setHours(entryTime.getHours());
+                    newDate.setMinutes(entryTime.getMinutes());
+                  }
                   form.setValue('entryTime', newDate);
                   setEntryTimeOpen(false);
                 }
@@ -191,11 +196,10 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
         <Input
           type="time"
           className="mt-2"
-          value={form.watch('entryTime') ? `${form.watch('entryTime')?.getHours().toString().padStart(2, '0')}:${form.watch('entryTime')?.getMinutes().toString().padStart(2, '0')}` : ''}
+          value={entryTime ? `${entryTime.getHours().toString().padStart(2, '0')}:${entryTime.getMinutes().toString().padStart(2, '0')}` : ''}
           onChange={(e) => {
             const [hours, minutes] = e.target.value.split(':').map(Number);
-            const currentEntryTime = form.watch('entryTime');
-            const newDate = currentEntryTime ? new Date(currentEntryTime) : new Date();
+            const newDate = entryTime ? new Date(entryTime) : new Date();
             newDate.setHours(hours);
             newDate.setMinutes(minutes);
             form.setValue('entryTime', newDate);
@@ -271,7 +275,7 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
               <p className="text-2xl font-bold">
                 ${(
                   parseFloat(currentBalance) *
-                  (parseFloat(form.watch('positionSize')) / 100)
+                  (parseFloat(positionSize) / 100)
                 ).toLocaleString('en-US', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
@@ -284,7 +288,7 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
                 ${parseFloat(currentBalance).toLocaleString('en-US', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
-                })} × {form.watch('positionSize')}
+                })} × {positionSize}
               </p>
             </div>
           </div>
@@ -308,7 +312,7 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
             <Label htmlFor="exitReason">平仓原因</Label>
             <Select
               onValueChange={(value) => form.setValue('exitReason', value)}
-              defaultValue={form.watch('exitReason') || ''}
+              defaultValue={exitReason || ''}
             >
               <SelectTrigger>
                 <SelectValue placeholder="请选择平仓原因" />
@@ -324,7 +328,7 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
             )}
           </div>
 
-          {form.watch('exitReason') === '其他原因' && (
+          {exitReason === '其他原因' && (
             <div className="space-y-2">
               <Label htmlFor="notes">备注</Label>
               <Textarea
@@ -341,7 +345,7 @@ export default function TradeForm({ trade, onSave, onCancel, currentBalance = '0
       <div className="flex items-center space-x-2">
         <Switch
           id="isClosed"
-          checked={form.watch('isClosed')}
+          checked={isClosed}
           onCheckedChange={(checked) => form.setValue('isClosed', checked)}
         />
         <Label htmlFor="isClosed">已平仓</Label>
