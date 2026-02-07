@@ -1,0 +1,10 @@
+{
+  "buildCommand": "pnpm vercel-build",
+  "outputDirectory": ".next",
+  "installCommand": "pnpm install --prod --ignore-optional",
+  "nodeVersion": "18.x",
+  "framework": "nextjs",
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
