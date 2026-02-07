@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inspector } from 'react-dev-inspector';
 import './globals.css';
 
@@ -19,16 +19,6 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: 'Trade Tracker', url: 'https://code.coze.cn' }],
   generator: 'Trade Tracker',
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-  },
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f172a' },
-  ],
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -47,6 +37,17 @@ export const metadata: Metadata = {
     follow: true,
   },
   manifest: '/manifest.json',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f172a' },
+  ],
 };
 
 export default function RootLayout({
