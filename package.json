@@ -3,17 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    // 1. 恢复 Next.js 原生构建/启动命令（Vercel 原生支持）
-    "build": "next build",
-    "dev": "next dev",
-    "start": "next start",
-    // 2. 保留包管理器限制
+    "build": "bash ./scripts/build.sh",
+    "dev": "bash ./scripts/dev.sh",
     "preinstall": "npx only-allow pnpm",
-    // 3. 完善 ESLint 检查范围
-    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
-    // 4. 修复 TypeScript 检查（仅检查不生成文件）
-    "ts-check": "tsc -p tsconfig.json --noEmit",
-    // 5. 保留 Capacitor 命令（仅本地使用，Vercel 会忽略）
+    "lint": "eslint",
+    "start": "bash ./scripts/start.sh",
+    "ts-check": "tsc -p tsconfig.json",
     "cap:sync": "npx cap sync",
     "cap:android": "npx cap open android",
     "cap:ios": "npx cap open ios"
@@ -21,7 +16,10 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/lib-storage": "^3.958.0",
-    // 1. 将 Capacitor 移到 devDependencies（网页部署不需要）
+    "@capacitor/android": "^8.0.2",
+    "@capacitor/cli": "^8.0.2",
+    "@capacitor/core": "^8.0.2",
+    "@capacitor/ios": "^8.0.2",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -60,14 +58,13 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.468.0",
-    // 2. 降级 Next.js 到稳定版（避免兼容性问题）
-    "next": "14.2.15",
+    "next": "16.1.1",
     "next-pwa": "^5.6.0",
     "next-themes": "^0.4.6",
     "pg": "^8.16.3",
-    "react": "18.3.1",
+    "react": "19.2.3",
     "react-day-picker": "^9.13.0",
-    "react-dom": "18.3.1",
+    "react-dom": "19.2.3",
     "react-hook-form": "^7.70.0",
     "react-resizable-panels": "^4.2.0",
     "recharts": "2.15.4",
@@ -79,26 +76,20 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.0.2",
-    "@capacitor/cli": "^8.0.2",
-    "@capacitor/core": "^8.0.2",
-    "@capacitor/ios": "^8.0.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "14.2.15",
+    "eslint-config-next": "16.1.1",
     "only-allow": "^1.2.2",
     "shadcn": "latest",
     "tailwindcss": "^4"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
-    "pnpm": ">=9.0.0",
-    // 新增：指定 Node 版本（匹配 Vercel 默认环境）
-    "node": ">=20.0.0"
+    "pnpm": ">=9.0.0"
   },
   "pnpm": {
     "overrides": {
