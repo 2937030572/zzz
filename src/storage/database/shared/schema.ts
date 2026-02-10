@@ -24,9 +24,9 @@ export const trades = pgTable("trades", {
   position: integer("position").notNull(),
   openAmount: numeric("open_amount").notNull(),
   openTime: text("open_time").notNull(),
-  closeReason: varchar("close_reason", { length: 50 }).notNull(),
+  closeReason: varchar("close_reason", { length: 50 }),
   remark: text("remark"),
-  profitLoss: numeric("profit_loss").notNull(),
+  profitLoss: numeric("profit_loss").notNull().default("0"),
   date: varchar("date", { length: 50 }).notNull(),
   isClosed: boolean("is_closed").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -79,41 +79,30 @@ export const updateBalanceSchema = createCoercedInsertSchema(balance)
   });
 
 // Trade Schemas
-export const insertTradeSchema = createCoercedInsertSchema(trades)
-  .pick({
-    symbol: true,
-    strategy: true,
-    position: true,
-    openAmount: true,
-    openTime: true,
-    closeReason: true,
-    remark: true,
-    profitLoss: true,
-    date: true,
-    isClosed: true,
-  })
-  .extend({
-    openAmount: z.union([z.string(), z.number()]).transform(String),
-    profitLoss: z.union([z.string(), z.number()]).transform(String),
-  });
-export const updateTradeSchema = createCoercedInsertSchema(trades)
-  .pick({
-    symbol: true,
-    strategy: true,
-    position: true,
-    openAmount: true,
-    openTime: true,
-    closeReason: true,
-    remark: true,
-    profitLoss: true,
-    date: true,
-    isClosed: true,
-  })
-  .partial()
-  .extend({
-    openAmount: z.union([z.string(), z.number()]).transform(String),
-    profitLoss: z.union([z.string(), z.number()]).transform(String),
-  });
+export const insertTradeSchema = z.object({
+  symbol: z.string().min(1),
+  strategy: z.string().default(''),
+  position: z.number(),
+  openAmount: z.union([z.string(), z.number()]),
+  openTime: z.string().min(1),
+  closeReason: z.string().nullable().optional(),
+  remark: z.string().nullable().optional(),
+  date: z.string().min(1),
+  isClosed: z.boolean().default(false),
+  profitLoss: z.union([z.string(), z.number()]).nullable().optional(),
+});
+export const updateTradeSchema = z.object({
+  symbol: z.string().min(1).optional(),
+  strategy: z.string().optional(),
+  position: z.number().optional(),
+  openAmount: z.any().optional(),
+  openTime: z.string().min(1).optional(),
+  closeReason: z.string().nullable().optional(),
+  remark: z.string().nullable().optional(),
+  profitLoss: z.any().optional(),
+  date: z.string().min(1).optional(),
+  isClosed: z.boolean().optional(),
+});
 
 // FundRecord Schemas
 export const insertFundRecordSchema = createCoercedInsertSchema(fundRecords)
@@ -142,7 +131,10 @@ export type InsertBalance = Omit<z.infer<typeof insertBalanceSchema>, 'amount'> 
 export type UpdateBalance = Omit<z.infer<typeof updateBalanceSchema>, 'amount'> & { amount: number | string };
 
 export type Trade = Omit<typeof trades.$inferSelect, 'openAmount' | 'profitLoss'> & { openAmount: number; profitLoss: number };
-export type InsertTrade = Omit<z.infer<typeof insertTradeSchema>, 'openAmount' | 'profitLoss'> & { openAmount: number | string; profitLoss: number | string };
+export type InsertTrade = Omit<z.infer<typeof insertTradeSchema>, 'openAmount' | 'profitLoss'> & {
+  openAmount: number | string;
+  profitLoss?: number | string; // 允许不传
+};
 export type UpdateTrade = Omit<z.infer<typeof updateTradeSchema>, 'openAmount' | 'profitLoss'> & { openAmount: number | string; profitLoss: number | string };
 
 export type FundRecord = Omit<typeof fundRecords.$inferSelect, 'amount'> & { amount: number };

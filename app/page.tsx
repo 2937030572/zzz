@@ -121,14 +121,11 @@ export default function TradingApp() {
 
     try {
       // 创建出入金记录（后端会自动更新余额）
-      const recordRes = await api.fundRecords.create(
-        {
-          type,
-          amount,
-          date: fundDate,
-        },
-        balance // 传入当前余额作为预期余额，用于并发校验
-      );
+      const recordRes = await api.fundRecords.create({
+        type,
+        amount,
+        date: fundDate,
+      });
 
       // 从响应中获取更新后的余额
       const updatedBalance = recordRes.balance || (type === 'deposit' ? balance + amount : balance - amount);
@@ -153,9 +150,9 @@ export default function TradingApp() {
       } else {
         setIsWithdrawDialogOpen(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add fund record:', error);
-      alert('添加出入金记录失败');
+      alert('添加出入金记录失败：' + (error?.message || '未知错误'));
     }
   };
 
@@ -173,7 +170,7 @@ export default function TradingApp() {
       }
 
       // 删除记录（后端会自动更新余额并返回新的余额）
-      const deleteRes = await api.fundRecords.delete(id, balance); // 传入当前余额作为预期余额，用于并发校验
+      const deleteRes = await api.fundRecords.delete(id);
 
       // 使用后端返回的余额值
       const updatedBalance = deleteRes.balance ?? newBalance;
@@ -188,29 +185,40 @@ export default function TradingApp() {
         value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete fund record:', error);
-      alert('删除出入金记录失败');
+      alert('删除出入金记录失败：' + (error?.message || '未知错误'));
     }
   };
 
   // 添加交易记录
   const handleAddTrade = async () => {
-    if (!symbol || !strategy || !profitLoss || !openDateTime) {
-      alert('请填写所有必填字段（交易品种、入场策略、盈亏金额、开仓日期）');
+    // 验证必填字段：未平仓时，盈亏金额和关闭原因可以不填
+    if (!symbol || !strategy || !openDateTime) {
+      alert('请填写所有必填字段（交易品种、入场策略、开仓日期）');
       return;
     }
 
-    const pl = Number(profitLoss);
-    if (isNaN(pl)) {
-      alert('盈亏金额必须是有效数字');
+    // 如果已平仓，盈亏金额必填
+    if (isClosed && !profitLoss) {
+      alert('已平仓时，盈亏金额为必填项');
       return;
     }
 
-    // 检查亏损是否会导致余额为负数
-    if (pl < 0 && balance + pl < 0) {
-      alert('余额不足，无法添加此亏损交易');
-      return;
+    // 计算盈亏金额（如果填写了）
+    let pl = 0;
+    if (profitLoss) {
+      pl = Number(profitLoss);
+      if (isNaN(pl)) {
+        alert('盈亏金额必须是有效数字');
+        return;
+      }
+
+      // 检查亏损是否会导致余额为负数
+      if (pl < 0 && balance + pl < 0) {
+        alert('余额不足，无法添加此亏损交易');
+        return;
+      }
     }
 
     try {
@@ -220,21 +228,18 @@ export default function TradingApp() {
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
       // 创建交易记录（后端会自动更新余额）
-      const tradeRes = await api.trades.create(
-        {
-          symbol,
-          strategy,
-          position,
-          openAmount,
-          openTime: time,
-          closeReason,
-          remark: closeReason === 'other' ? remark : undefined,
-          profitLoss: pl,
-          date: date,
-          isClosed,
-        },
-        balance // 传入当前余额作为预期余额，用于并发校验
-      );
+      const tradeRes = await api.trades.create({
+        symbol,
+        strategy,
+        position,
+        openAmount,
+        openTime: time,
+        closeReason: isClosed ? closeReason : 'pending',
+        remark: isClosed && closeReason === 'other' ? remark : undefined,
+        profitLoss: isClosed ? pl : 0,
+        date: date,
+        isClosed,
+      });
 
       // 从响应中获取更新后的余额
       const updatedBalance = tradeRes.balance || (balance + pl);
@@ -260,9 +265,9 @@ export default function TradingApp() {
       setOpenDateTime(new Date().toISOString().slice(0, 16));
       setIsClosed(true);
       setIsTradeDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add trade:', error);
-      alert('添加交易记录失败');
+      alert('添加交易记录失败：' + (error?.message || '未知错误'));
     }
   };
 
@@ -316,7 +321,7 @@ export default function TradingApp() {
       }
 
       // 删除交易记录（后端会自动更新余额并返回新的余额）
-      const deleteRes = await api.trades.delete(tradeId, balance); // 传入当前余额作为预期余额，用于并发校验
+      const deleteRes = await api.trades.delete(tradeId);
 
       // 使用后端返回的余额值
       const updatedBalance = deleteRes.balance ?? newBalance;
@@ -331,9 +336,9 @@ export default function TradingApp() {
         value: updatedBalance,
       });
       setEquityHistory([...equityHistory, historyRes.record]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete trade:', error);
-      alert('删除交易记录失败');
+      alert('删除交易记录失败：' + (error?.message || '未知错误'));
     }
   };
 
@@ -358,17 +363,30 @@ export default function TradingApp() {
 
   // 保存编辑
   const handleSaveEdit = async () => {
-    if (!editingTrade || !symbol || !profitLoss || !openDateTime) return;
+    if (!editingTrade || !symbol || !openDateTime) return;
+
+    // 如果已平仓，盈亏金额必填
+    if (isClosed && !profitLoss) {
+      alert('已平仓时，盈亏金额为必填项');
+      return;
+    }
 
     try {
       const oldProfitLoss = editingTrade.profitLoss;
-      const newProfitLoss = Number(profitLoss);
 
-      // 检查编辑后余额是否为负数
-      const newBalance = balance - oldProfitLoss + newProfitLoss;
-      if (newBalance < 0) {
-        alert('修改后的盈亏会导致余额为负数，无法保存');
-        return;
+      // 计算新盈亏（如果填写了）
+      let newProfitLoss = oldProfitLoss;
+      let newBalance = balance;
+
+      if (profitLoss && isClosed) {
+        newProfitLoss = Number(profitLoss);
+
+        // 检查编辑后余额是否为负数
+        newBalance = balance - oldProfitLoss + newProfitLoss;
+        if (newBalance < 0) {
+          alert('修改后的盈亏会导致余额为负数，无法保存');
+          return;
+        }
       }
 
       // 将 openDateTime 拆分为 date 和 openTime
@@ -384,13 +402,12 @@ export default function TradingApp() {
           strategy,
           position,
           openTime: time,
-          closeReason,
-          remark: closeReason === 'other' ? remark : undefined,
-          profitLoss: newProfitLoss,
+          closeReason: isClosed ? closeReason : 'pending',
+          remark: isClosed && closeReason === 'other' ? remark : undefined,
+          profitLoss: isClosed && profitLoss ? newProfitLoss : 0,
           date: date,
           isClosed,
-        },
-        balance // 传入当前余额作为预期余额，用于并发校验
+        }
       );
 
       // 从响应中获取更新后的余额
@@ -410,9 +427,9 @@ export default function TradingApp() {
       // 关闭对话框
       setIsEditDialogOpen(false);
       setEditingTrade(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save trade:', error);
-      alert('保存交易记录失败');
+      alert('保存交易记录失败：' + (error?.message || '未知错误'));
     }
   };
 

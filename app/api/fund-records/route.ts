@@ -24,22 +24,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { type, amount, expectedBalance } = body;
+    const { type, amount } = body;
 
     // 获取当前余额
     const currentBalance = await balanceManager.getBalance();
-
-    // 前端传入了预期余额，进行并发校验
-    if (expectedBalance !== undefined && currentBalance !== Number(expectedBalance)) {
-      console.error(`Balance mismatch: expected ${expectedBalance}, actual ${currentBalance}`);
-      return NextResponse.json(
-        { error: 'Balance has been changed by another operation. Please refresh and try again.' },
-        { status: 409 }
-      );
-    }
-
-    // 创建出入金记录
-    const record = await fundRecordManager.createFundRecord(body);
 
     // 计算新余额
     const newBalance = type === 'deposit' ? currentBalance + Number(amount) : currentBalance - Number(amount);
@@ -48,6 +36,9 @@ export async function POST(request: Request) {
     if (newBalance < 0) {
       return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
     }
+
+    // 创建出入金记录
+    const record = await fundRecordManager.createFundRecord(body);
 
     // 更新余额
     await balanceManager.updateBalance({ amount: newBalance });
@@ -75,16 +66,15 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Fund record not found' }, { status: 404 });
     }
 
-    // 获取当前余额
+    // 计算新余额
     const currentBalance = await balanceManager.getBalance();
+    const newBalance = record.type === 'deposit'
+      ? currentBalance - record.amount
+      : currentBalance + record.amount;
 
-    // 前端传入了预期余额，进行并发校验
-    if (expectedBalance !== undefined && currentBalance !== Number(expectedBalance)) {
-      console.error(`Balance mismatch: expected ${expectedBalance}, actual ${currentBalance}`);
-      return NextResponse.json(
-        { error: 'Balance has been changed by another operation. Please refresh and try again.' },
-        { status: 409 }
-      );
+    // 余额不能为负数
+    if (newBalance < 0) {
+      return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
     }
 
     // 删除记录
@@ -92,11 +82,6 @@ export async function DELETE(request: Request) {
     if (!success) {
       return NextResponse.json({ error: 'Fund record not found' }, { status: 404 });
     }
-
-    // 计算新余额
-    const newBalance = record.type === 'deposit'
-      ? currentBalance - record.amount
-      : currentBalance + record.amount;
 
     // 更新余额
     await balanceManager.updateBalance({ amount: newBalance });

@@ -13,7 +13,6 @@ export class BalanceManager {
 
   async updateBalance(data: UpdateBalance): Promise<Balance> {
     const db = await getDb(schema);
-    const validated = updateBalanceSchema.parse(data);
     
     // 检查是否存在记录，不存在则创建
     const existing = await db.query.balance.findFirst();
