@@ -66,17 +66,12 @@ const { createInsertSchema: createCoercedInsertSchema } = createSchemaFactory({
 });
 
 // Balance Schemas
-export const insertBalanceSchema = createCoercedInsertSchema(balance).pick({
-  amount: true,
+export const insertBalanceSchema = z.object({
+  amount: z.union([z.string(), z.number()]).transform(String),
 });
-export const updateBalanceSchema = createCoercedInsertSchema(balance)
-  .pick({
-    amount: true,
-  })
-  .partial()
-  .extend({
-    amount: z.union([z.string(), z.number()]).transform(String),
-  });
+export const updateBalanceSchema = z.object({
+  amount: z.union([z.string(), z.number()]).transform(String),
+}).partial();
 
 // Trade Schemas
 export const insertTradeSchema = z.object({
@@ -105,25 +100,17 @@ export const updateTradeSchema = z.object({
 });
 
 // FundRecord Schemas
-export const insertFundRecordSchema = createCoercedInsertSchema(fundRecords)
-  .pick({
-    type: true,
-    amount: true,
-    date: true,
-  })
-  .extend({
-    amount: z.union([z.string(), z.number()]).transform(String),
-  });
+export const insertFundRecordSchema = z.object({
+  type: z.string().min(1),
+  amount: z.union([z.string(), z.number()]).transform(String),
+  date: z.string().min(1),
+});
 
 // EquityHistory Schemas
-export const insertEquityHistorySchema = createCoercedInsertSchema(equityHistory)
-  .pick({
-    date: true,
-    value: true,
-  })
-  .extend({
-    value: z.union([z.string(), z.number()]).transform(String),
-  });
+export const insertEquityHistorySchema = z.object({
+  date: z.string().min(1),
+  value: z.union([z.string(), z.number()]).transform(String),
+});
 
 // TypeScript Types
 export type Balance = typeof balance.$inferSelect;

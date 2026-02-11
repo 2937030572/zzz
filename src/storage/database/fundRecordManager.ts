@@ -8,7 +8,19 @@ export class FundRecordManager {
   async createFundRecord(data: InsertFundRecord): Promise<FundRecord> {
     const db = await getDb(schema);
     const validated = insertFundRecordSchema.parse(data);
-    const [record] = await db.insert(fundRecords).values(validated).returning();
+
+    // 使用明确类型的数据对象
+    const values: {
+      type: string;
+      amount: string;
+      date: string;
+    } = {
+      type: validated.type,
+      amount: validated.amount,
+      date: validated.date,
+    };
+
+    const [record] = await db.insert(fundRecords).values(values).returning();
     return { ...record, amount: Number(record.amount) } as unknown as FundRecord;
   }
 

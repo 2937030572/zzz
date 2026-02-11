@@ -8,8 +8,19 @@ export class TradeManager {
   async createTrade(data: InsertTrade): Promise<Trade> {
     const db = await getDb(schema);
 
-    // 只传递非 undefined 的字段
-    const values: Record<string, unknown> = {
+    // 使用明确类型的数据对象
+    const values: {
+      symbol: string;
+      strategy: string;
+      position: number;
+      openAmount: string;
+      openTime: string;
+      date: string;
+      isClosed: boolean;
+      profitLoss: string;
+      closeReason?: string;
+      remark?: string;
+    } = {
       symbol: data.symbol,
       strategy: data.strategy || '',
       position: data.position,
