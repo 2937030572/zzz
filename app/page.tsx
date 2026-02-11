@@ -45,7 +45,6 @@ export default function TradingApp() {
   const [balance, setBalance] = useState<number>(0);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [fundRecords, setFundRecords] = useState<FundRecord[]>([]);
-  const [equityHistory, setEquityHistory] = useState<Array<{ date: string; value: number }>>([]);
 
   // 添加交易对话框状态
   const [isTradeDialogOpen, setIsTradeDialogOpen] = useState(false);
@@ -73,20 +72,6 @@ export default function TradingApp() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // 计算夏普比率
-  const calculateSharpeRatio = (trades: Trade[]): number => {
-    if (trades.length === 0) return 0;
-    const validTrades = trades.filter(t => t.openAmount > 0);
-    if (validTrades.length === 0) return 0;
-
-    const returns = validTrades.map(t => t.profitLoss / t.openAmount);
-    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
-    const std = Math.sqrt(variance);
-
-    return std === 0 ? 0 : mean / std;
-  };
-
   // 从数据库加载数据
   useEffect(() => {
     const loadData = async () => {
@@ -102,10 +87,6 @@ export default function TradingApp() {
         // 加载出入金记录
         const fundRecordsRes = await api.fundRecords.getAll();
         setFundRecords(fundRecordsRes.records);
-
-        // 加载资产历史
-        const equityHistoryRes = await api.equityHistory.getAll();
-        setEquityHistory(equityHistoryRes.history);
       } catch (error) {
         console.error('Failed to load data:', error);
       }
@@ -151,12 +132,6 @@ export default function TradingApp() {
       setFundRecords([recordRes.record, ...fundRecords]);
 
       // 更新资产历史
-      const historyRes = await api.equityHistory.create({
-        date: fundDate,
-        value: updatedBalance,
-      });
-      setEquityHistory([...equityHistory, historyRes.record]);
-
       setFundAmount('');
       setFundDate(new Date().toISOString().split('T')[0]);
       if (type === 'deposit') {
@@ -192,13 +167,6 @@ export default function TradingApp() {
 
       // 删除记录
       setFundRecords(fundRecords.filter(r => r.id !== id));
-
-      // 更新资产历史
-      const historyRes = await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: updatedBalance,
-      });
-      setEquityHistory([...equityHistory, historyRes.record]);
     } catch (error: any) {
       console.error('Failed to delete fund record:', error);
       alert('删除出入金记录失败：' + (error?.message || '未知错误'));
@@ -261,13 +229,6 @@ export default function TradingApp() {
 
       // 添加交易记录
       setTrades([tradeRes.trade, ...trades]);
-
-      // 更新资产历史（使用交易记录的日期）
-      const historyRes = await api.equityHistory.create({
-        date: date,
-        value: updatedBalance,
-      });
-      setEquityHistory([...equityHistory, historyRes.record]);
 
       // 重置表单
       setSymbol('');
@@ -343,13 +304,6 @@ export default function TradingApp() {
 
       // 删除记录
       setTrades(trades.filter(t => t.id !== tradeId));
-
-      // 更新资产历史（使用交易记录的日期）
-      const historyRes = await api.equityHistory.create({
-        date: tradeToDelete.date,
-        value: updatedBalance,
-      });
-      setEquityHistory([...equityHistory, historyRes.record]);
     } catch (error: any) {
       console.error('Failed to delete trade:', error);
       alert('删除交易记录失败：' + (error?.message || '未知错误'));
@@ -431,13 +385,6 @@ export default function TradingApp() {
       // 更新交易列表
       setTrades(trades.map(t => t.id === editingTrade.id ? updatedTradeRes.trade : t));
 
-      // 更新资产历史（使用交易记录的日期）
-      const historyRes = await api.equityHistory.create({
-        date: date,
-        value: updatedBalance,
-      });
-      setEquityHistory([...equityHistory, historyRes.record]);
-
       // 关闭对话框
       setIsEditDialogOpen(false);
       setEditingTrade(null);
@@ -446,20 +393,6 @@ export default function TradingApp() {
       alert('保存交易记录失败：' + (error?.message || '未知错误'));
     }
   };
-
-  // 计算净权益（扣除出金后的资产）
-  const netEquity = equityHistory.map((item, index) => {
-    let totalWithdrawals = 0;
-    for (const record of fundRecords) {
-      if (record.type === 'withdraw' && new Date(record.date) <= new Date(item.date)) {
-        totalWithdrawals += record.amount;
-      }
-    }
-    return {
-      date: new Date(item.date).toLocaleDateString('zh-CN'),
-      value: item.value - totalWithdrawals,
-    };
-  });
 
   // 平仓原因显示
   const getCloseReasonText = (reason: string, remark?: string) => {
@@ -663,49 +596,6 @@ export default function TradingApp() {
           </CardContent>
         </Card>
 
-        {/* 资产走势图 */}
-        <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
-          <CardHeader className="border-b border-cyan-500/20">
-            <CardTitle className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">资产走势图</CardTitle>
-            <CardDescription className="text-cyan-500/60">减去出金后的资产变化趋势</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px] w-full">
-              {netEquity.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={netEquity}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(6,182,212,0.2)" />
-                    <XAxis dataKey="date" stroke="#22d3ee" tick={{ fill: '#22d3ee', fontSize: 12 }} />
-                    <YAxis stroke="#22d3ee" tick={{ fill: '#22d3ee', fontSize: 12 }} />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'rgba(17, 24, 39, 0.95)', 
-                        borderColor: '#06b6d4', 
-                        borderWidth: 2,
-                        boxShadow: '0 0 20px rgba(6,182,212,0.3)'
-                      }}
-                      itemStyle={{ color: '#22d3ee', fontWeight: 'bold' }}
-                      labelStyle={{ color: '#06b6d4' }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="#22d3ee" 
-                      strokeWidth={3} 
-                      dot={{ fill: '#22d3ee', r: 4, strokeWidth: 2 }} 
-                      activeDot={{ r: 8, fill: '#06b6d4', stroke: '#22d3ee', strokeWidth: 3 }} 
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-cyan-500/50">
-                  暂无数据
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
         {/* 我的交易数据 */}
         <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
           <CardHeader className="border-b border-cyan-500/20">
@@ -775,7 +665,7 @@ export default function TradingApp() {
             </div>
 
             {/* 总体统计 */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border border-cyan-500/30 bg-gray-800/50 p-4 text-center backdrop-blur-sm">
                 <div className={`text-2xl font-bold ${filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0) >= 0 ? '+' : ''}
@@ -792,15 +682,6 @@ export default function TradingApp() {
                   {filteredTrades.length > 0 ? Math.round((filteredTrades.filter(t => t.profitLoss > 0).length / filteredTrades.length) * 100) : 0}%
                 </div>
                 <div className="text-sm text-cyan-500/60">胜率</div>
-              </div>
-              <div className="rounded-lg border border-cyan-500/30 bg-gray-800/50 p-4 text-center backdrop-blur-sm">
-                <div className={`text-2xl font-bold ${(() => {
-                  const sharpe = calculateSharpeRatio(filteredTrades);
-                  return sharpe >= 0 ? 'text-green-400' : 'text-red-400';
-                })()}`}>
-                  {calculateSharpeRatio(filteredTrades).toFixed(2)}
-                </div>
-                <div className="text-sm text-cyan-500/60">夏普比率</div>
               </div>
             </div>
           </CardContent>
