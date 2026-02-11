@@ -73,6 +73,20 @@ export default function TradingApp() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
+  // 计算夏普比率
+  const calculateSharpeRatio = (trades: Trade[]): number => {
+    if (trades.length === 0) return 0;
+    const validTrades = trades.filter(t => t.openAmount > 0);
+    if (validTrades.length === 0) return 0;
+
+    const returns = validTrades.map(t => t.profitLoss / t.openAmount);
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
+    const std = Math.sqrt(variance);
+
+    return std === 0 ? 0 : mean / std;
+  };
+
   // 从数据库加载数据
   useEffect(() => {
     const loadData = async () => {
@@ -761,7 +775,7 @@ export default function TradingApp() {
             </div>
 
             {/* 总体统计 */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               <div className="rounded-lg border border-cyan-500/30 bg-gray-800/50 p-4 text-center backdrop-blur-sm">
                 <div className={`text-2xl font-bold ${filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0) >= 0 ? '+' : ''}
@@ -778,6 +792,15 @@ export default function TradingApp() {
                   {filteredTrades.length > 0 ? Math.round((filteredTrades.filter(t => t.profitLoss > 0).length / filteredTrades.length) * 100) : 0}%
                 </div>
                 <div className="text-sm text-cyan-500/60">胜率</div>
+              </div>
+              <div className="rounded-lg border border-cyan-500/30 bg-gray-800/50 p-4 text-center backdrop-blur-sm">
+                <div className={`text-2xl font-bold ${(() => {
+                  const sharpe = calculateSharpeRatio(filteredTrades);
+                  return sharpe >= 0 ? 'text-green-400' : 'text-red-400';
+                })()}`}>
+                  {calculateSharpeRatio(filteredTrades).toFixed(2)}
+                </div>
+                <div className="text-sm text-cyan-500/60">夏普比率</div>
               </div>
             </div>
           </CardContent>

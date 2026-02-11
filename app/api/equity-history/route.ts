@@ -8,7 +8,7 @@ const pool = new Pool({
 
 export async function GET() {
   try {
-    const result = await pool.query('SELECT * FROM equity_history ORDER BY created_at ASC');
+    const result = await pool.query('SELECT * FROM equity_history ORDER BY date ASC');
 
     const history = result.rows.map((row: any) => ({
       id: row.id,
