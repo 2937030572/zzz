@@ -63,10 +63,128 @@ export default function TradingApp() {
   const [remark, setRemark] = useState<string>('');
   const [profitLoss, setProfitLoss] = useState<string>('');
   const [isClosed, setIsClosed] = useState<boolean>(true);
-  
+
+  // 交易分级系统状态
+  const [volumeTrend, setVolumeTrend] = useState<'top_divergence' | 'bottom_divergence' | 'no_trend'>('no_trend');
+  const [bollContraction, setBollContraction] = useState<'1h' | '2h' | '4h_plus'>('1h');
+  const [bollWidth, setBollWidth] = useState<'converged' | 'not_converged'>('not_converged');
+  const [pattern, setPattern] = useState<'head_shoulders' | 'double_top_bottom' | 'triple_top_bottom' | 'triangle' | 'cup_handle' | 'channel' | 'none'>('none');
+
+  // 计算交易级别
+  const calculateTradeLevel = (): { level: string; color: string; description: string; suggestion: string } => {
+    // 1. 检查量能背离
+    if (volumeTrend === 'no_trend') {
+      return {
+        level: 'C',
+        color: 'text-gray-400',
+        description: '无量能背离',
+        suggestion: '不建议操作'
+      };
+    }
+
+    // 有量能背离，继续判断
+    const isLongTermContraction = bollContraction === '4h_plus';
+    const isConverged = bollWidth === 'converged';
+    const hasPattern = pattern !== 'none';
+
+    if (isLongTermContraction) {
+      // A级路径：4小时及以上收缩
+      if (isConverged) {
+        if (hasPattern) {
+          return {
+            level: 'A+',
+            color: 'text-yellow-400',
+            description: '卓越交易机会（形态确认）',
+            suggestion: '强烈建议操作'
+          };
+        } else {
+          return {
+            level: 'A',
+            color: 'text-green-400',
+            description: '优秀交易机会',
+            suggestion: '强烈建议操作'
+          };
+        }
+      } else {
+        return {
+          level: 'A-',
+          color: 'text-cyan-400',
+          description: '优秀但布林带未粘合',
+          suggestion: '建议谨慎操作'
+        };
+      }
+    } else {
+      // B级路径：1-2小时收缩
+      if (isConverged) {
+        if (hasPattern) {
+          return {
+            level: 'B+',
+            color: 'text-blue-400',
+            description: '良好交易机会（形态确认）',
+            suggestion: '可以操作'
+          };
+        } else {
+          return {
+            level: 'B',
+            color: 'text-indigo-400',
+            description: '良好交易机会',
+            suggestion: '可以操作'
+          };
+        }
+      } else {
+        return {
+          level: 'B-',
+          color: 'text-purple-400',
+          description: '一般交易机会',
+          suggestion: '建议谨慎操作'
+        };
+      }
+    }
+  };
+
+  // 获取交易级别信息
+  const tradeLevel = calculateTradeLevel();
+
   // 日期筛选状态
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+
+  // 快捷日期选择处理函数
+  const handleQuickDateFilter = (type: 'today' | '3days' | 'week' | 'month' | 'halfYear') => {
+    const today = new Date();
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+    switch (type) {
+      case 'today':
+        setFilterStartDate(formatDate(today));
+        setFilterEndDate(formatDate(today));
+        break;
+      case '3days':
+        const threeDaysAgo = new Date(today);
+        threeDaysAgo.setDate(today.getDate() - 3);
+        setFilterStartDate(formatDate(threeDaysAgo));
+        setFilterEndDate(formatDate(today));
+        break;
+      case 'week':
+        const weekAgo = new Date(today);
+        weekAgo.setDate(today.getDate() - 7);
+        setFilterStartDate(formatDate(weekAgo));
+        setFilterEndDate(formatDate(today));
+        break;
+      case 'month':
+        const monthAgo = new Date(today);
+        monthAgo.setDate(today.getDate() - 30);
+        setFilterStartDate(formatDate(monthAgo));
+        setFilterEndDate(formatDate(today));
+        break;
+      case 'halfYear':
+        const halfYearAgo = new Date(today);
+        halfYearAgo.setDate(today.getDate() - 180);
+        setFilterStartDate(formatDate(halfYearAgo));
+        setFilterEndDate(formatDate(today));
+        break;
+    }
+  };
 
   // 编辑相关状态
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
@@ -175,9 +293,9 @@ export default function TradingApp() {
 
   // 添加交易记录
   const handleAddTrade = async () => {
-    // 验证必填字段：未平仓时，盈亏金额和关闭原因可以不填
-    if (!symbol || !strategy || !openDateTime) {
-      alert('请填写所有必填字段（交易品种、入场策略、开仓日期）');
+    // 验证必填字段
+    if (!symbol || !openDateTime) {
+      alert('请填写交易品种和开仓日期');
       return;
     }
 
@@ -204,6 +322,36 @@ export default function TradingApp() {
     }
 
     try {
+      // 构建策略字符串（基于分级系统）
+      const volumeTrendText = {
+        'top_divergence': '顶背离',
+        'bottom_divergence': '底背离',
+        'no_trend': '无趋势'
+      }[volumeTrend];
+
+      const bollContractionText = {
+        '1h': '1h收缩',
+        '2h': '2h收缩',
+        '4h_plus': '4h+收缩'
+      }[bollContraction];
+
+      const bollWidthText = {
+        'converged': '粘合',
+        'not_converged': '未粘合'
+      }[bollWidth];
+
+      const patternText = {
+        'head_shoulders': '头肩顶底',
+        'double_top_bottom': '双顶底',
+        'triple_top_bottom': '三重顶底',
+        'triangle': '三角',
+        'cup_handle': '杯柄',
+        'channel': '通道',
+        'none': '无形态'
+      }[pattern];
+
+      const strategyText = `${tradeLevel.level}级 - ${volumeTrendText} / ${bollContractionText} / ${bollWidthText} / ${patternText}`;
+
       // 将 openDateTime 拆分为 date 和 openTime
       const dateTime = new Date(openDateTime);
       const date = dateTime.toISOString().split('T')[0];
@@ -212,7 +360,7 @@ export default function TradingApp() {
       // 创建交易记录（后端会自动更新余额）
       const tradeRes = await api.trades.create({
         symbol,
-        strategy,
+        strategy: strategyText,
         position,
         openAmount,
         openTime: time,
@@ -234,6 +382,10 @@ export default function TradingApp() {
       setSymbol('');
       setStrategy('');
       setPosition(5);
+      setVolumeTrend('no_trend');
+      setBollContraction('1h');
+      setBollWidth('not_converged');
+      setPattern('none');
       setCloseReason('profit');
       setRemark('');
       setProfitLoss('');
@@ -625,6 +777,61 @@ export default function TradingApp() {
                 />
               </div>
             </div>
+
+            {/* 快捷日期选择 */}
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickDateFilter('today')}
+                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+              >
+                今天
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickDateFilter('3days')}
+                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+              >
+                近三天
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickDateFilter('week')}
+                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+              >
+                一周
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickDateFilter('month')}
+                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+              >
+                一月
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickDateFilter('halfYear')}
+                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+              >
+                半年
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+                className="text-gray-400 hover:text-gray-300 hover:bg-gray-700/50"
+              >
+                清除筛选
+              </Button>
+            </div>
             
             {/* 盈利统计 */}
             <div className="mb-4">
@@ -722,15 +929,79 @@ export default function TradingApp() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="strategy" className="text-cyan-400">入场策略 *</Label>
-                <Input
-                  id="strategy"
-                  placeholder="请输入入场策略（必填）"
-                  value={strategy}
-                  onChange={(e) => setStrategy(e.target.value)}
-                  className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                />
+              {/* 交易分级系统 */}
+              <div className="rounded-lg border border-cyan-500/30 bg-gray-800/50 p-4 space-y-4">
+                <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2">
+                  <h3 className="text-lg font-semibold text-cyan-400">交易分级系统</h3>
+                  <div className={`px-3 py-1 rounded-full border ${tradeLevel.level === 'A+' ? 'border-yellow-500/50 bg-yellow-500/10' : tradeLevel.level.startsWith('A') ? 'border-green-500/50 bg-green-500/10' : tradeLevel.level.startsWith('B') ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-500/50 bg-gray-500/10'}`}>
+                    <span className={`text-lg font-bold ${tradeLevel.color}`}>{tradeLevel.level}级</span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-400">{tradeLevel.description}</p>
+                <p className={`text-sm font-semibold ${tradeLevel.color}`}>建议：{tradeLevel.suggestion}</p>
+
+                {/* 量能状态 */}
+                <div className="space-y-2">
+                  <Label className="text-cyan-400">量能状态</Label>
+                  <Select value={volumeTrend} onValueChange={(value) => setVolumeTrend(value as any)}>
+                    <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-cyan-500/30 bg-gray-800">
+                      <SelectItem value="top_divergence" className="text-white hover:bg-gray-700">🔴 顶背离（价格上涨但成交量减少）</SelectItem>
+                      <SelectItem value="bottom_divergence" className="text-white hover:bg-gray-700">🟢 底背离（价格下跌但成交量减少）</SelectItem>
+                      <SelectItem value="no_trend" className="text-white hover:bg-gray-700">⚪ 无趋势</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* BOLL收缩时长 */}
+                <div className="space-y-2">
+                  <Label className="text-cyan-400">BOLL收缩时长</Label>
+                  <Select value={bollContraction} onValueChange={(value) => setBollContraction(value as any)}>
+                    <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-cyan-500/30 bg-gray-800">
+                      <SelectItem value="1h" className="text-white hover:bg-gray-700">⏱️ 1小时及以下收缩</SelectItem>
+                      <SelectItem value="2h" className="text-white hover:bg-gray-700">⏰ 2小时收缩</SelectItem>
+                      <SelectItem value="4h_plus" className="text-white hover:bg-gray-700">⌛ 4小时及以上收缩</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 布林带宽度 */}
+                <div className="space-y-2">
+                  <Label className="text-cyan-400">布林带宽度</Label>
+                  <Select value={bollWidth} onValueChange={(value) => setBollWidth(value as any)}>
+                    <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-cyan-500/30 bg-gray-800">
+                      <SelectItem value="converged" className="text-white hover:bg-gray-700">✨ 粘合（上下轨靠得很近）</SelectItem>
+                      <SelectItem value="not_converged" className="text-white hover:bg-gray-700">📊 未粘合（布林带较宽）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 形态 */}
+                <div className="space-y-2">
+                  <Label className="text-cyan-400">形态</Label>
+                  <Select value={pattern} onValueChange={(value) => setPattern(value as any)}>
+                    <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-cyan-500/30 bg-gray-800">
+                      <SelectItem value="head_shoulders" className="text-white hover:bg-gray-700">🏔️ 头肩顶（底）</SelectItem>
+                      <SelectItem value="double_top_bottom" className="text-white hover:bg-gray-700">👥 双顶底</SelectItem>
+                      <SelectItem value="triple_top_bottom" className="text-white hover:bg-gray-700">⛰️ 三重顶（底）</SelectItem>
+                      <SelectItem value="triangle" className="text-white hover:bg-gray-700">🔺 三角</SelectItem>
+                      <SelectItem value="cup_handle" className="text-white hover:bg-gray-700">☕ 杯柄</SelectItem>
+                      <SelectItem value="channel" className="text-white hover:bg-gray-700">📉 通道</SelectItem>
+                      <SelectItem value="none" className="text-white hover:bg-gray-700">❌ 无</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -769,44 +1040,48 @@ export default function TradingApp() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="close-reason" className="text-cyan-400">平仓原因</Label>
-                <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
-                  <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-cyan-500/30 bg-gray-800">
-                    <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
-                    <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
-                    <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {isClosed && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="close-reason" className="text-cyan-400">平仓原因</Label>
+                    <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
+                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="border-cyan-500/30 bg-gray-800">
+                        <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
+                        <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
+                        <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              {closeReason === 'other' && (
-                <div className="space-y-2">
-                  <Label htmlFor="remark" className="text-cyan-400">备注</Label>
-                  <Textarea
-                    id="remark"
-                    placeholder="请输入备注信息"
-                    value={remark}
-                    onChange={(e) => setRemark(e.target.value)}
-                    className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                  />
-                </div>
+                  {closeReason === 'other' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="remark" className="text-cyan-400">备注</Label>
+                      <Textarea
+                        id="remark"
+                        placeholder="请输入备注信息"
+                        value={remark}
+                        onChange={(e) => setRemark(e.target.value)}
+                        className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="profit-loss" className="text-cyan-400">盈亏金额</Label>
+                    <Input
+                      id="profit-loss"
+                      type="number"
+                      placeholder="正数为盈利，负数为亏损"
+                      value={profitLoss}
+                      onChange={(e) => setProfitLoss(e.target.value)}
+                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+                    />
+                  </div>
+                </>
               )}
-
-              <div className="space-y-2">
-                <Label htmlFor="profit-loss" className="text-cyan-400">盈亏金额</Label>
-                <Input
-                  id="profit-loss"
-                  type="number"
-                  placeholder="正数为盈利，负数为亏损"
-                  value={profitLoss}
-                  onChange={(e) => setProfitLoss(e.target.value)}
-                  className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                />
-              </div>
             </div>
             <DialogFooter className="mt-4 pt-4 border-t border-cyan-500/20">
               <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700" onClick={handleAddTrade}>添加记录</Button>
@@ -890,44 +1165,48 @@ export default function TradingApp() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="edit-close-reason" className="text-cyan-400">平仓原因</Label>
-                <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
-                  <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-cyan-500/30 bg-gray-800">
-                    <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
-                    <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
-                    <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {isClosed && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-close-reason" className="text-cyan-400">平仓原因</Label>
+                    <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
+                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="border-cyan-500/30 bg-gray-800">
+                        <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
+                        <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
+                        <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              {closeReason === 'other' && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-remark" className="text-cyan-400">备注</Label>
-                  <Textarea
-                    id="edit-remark"
-                    placeholder="请输入备注信息"
-                    value={remark}
-                    onChange={(e) => setRemark(e.target.value)}
-                    className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                  />
-                </div>
+                  {closeReason === 'other' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-remark" className="text-cyan-400">备注</Label>
+                      <Textarea
+                        id="edit-remark"
+                        placeholder="请输入备注信息"
+                        value={remark}
+                        onChange={(e) => setRemark(e.target.value)}
+                        className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-profit-loss" className="text-cyan-400">盈亏金额</Label>
+                    <Input
+                      id="edit-profit-loss"
+                      type="number"
+                      placeholder="正数为盈利，负数为亏损"
+                      value={profitLoss}
+                      onChange={(e) => setProfitLoss(e.target.value)}
+                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+                    />
+                  </div>
+                </>
               )}
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-profit-loss" className="text-cyan-400">盈亏金额</Label>
-                <Input
-                  id="edit-profit-loss"
-                  type="number"
-                  placeholder="正数为盈利，负数为亏损"
-                  value={profitLoss}
-                  onChange={(e) => setProfitLoss(e.target.value)}
-                  className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                />
-              </div>
             </div>
             <DialogFooter className="mt-4 pt-4 border-t border-cyan-500/20">
               <Button 
