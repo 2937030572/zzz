@@ -1,9 +1,23 @@
 {
-  "buildCommand": "pnpm vercel-build",
-  "outputDirectory": ".next",
-  "installCommand": "pnpm install --prod --ignore-optional",
-  "framework": "nextjs",
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "version": 2,
+  "builds": [
+    {
+      "src": "index.mjs",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "dist/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/index.mjs"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/dist/index.html"
+    }
+  ]
 }
