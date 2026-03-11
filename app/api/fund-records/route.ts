@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
+import { createClient } from '@supabase/supabase-js';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+// 创建 Supabase 客户端
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!
+);
 
 export async function GET(request: Request) {
   try {
@@ -12,30 +14,26 @@ export async function GET(request: Request) {
     const accountId = searchParams.get('accountId');
     const limit = parseInt(searchParams.get('limit') || '10');
 
-    let query = 'SELECT * FROM fund_records';
-    const params: any[] = [];
-    const conditions: string[] = [];
+    let query = supabase.from('fund_records').select('*');
 
     if (accountId) {
-      conditions.push(`account_id = $${params.length + 1}`);
-      params.push(accountId);
+      query = query.eq('account_id', accountId);
     }
 
     if (type) {
-      conditions.push(`type = $${params.length + 1}`);
-      params.push(type);
+      query = query.eq('type', type);
     }
 
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
+    query = query.order('created_at', { ascending: false }).limit(limit);
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching fund records:', error);
+      return NextResponse.json({ error: 'Failed to fetch fund records' }, { status: 500 });
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
-
-    const result = await pool.query(query, params);
-
-    const records = result.rows.map((row: any) => ({
+    const records = data.map((row: any) => ({
       id: row.id,
       type: row.type,
       amount: Number(row.amount),
@@ -52,23 +50,24 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const client = await pool.connect();
   try {
     const body = await request.json();
     const { type, amount, date, accountId } = body;
-    const targetAccountId = accountId || 1;
-
-    await client.query('BEGIN');
+    const targetAccountId = accountId || '00000000-0000-0000-0000-000000000001';
 
     // 获取当前余额
-    const balanceResult = await client.query(
-      'SELECT amount FROM balance WHERE account_id = $1',
-      [targetAccountId]
-    );
+    const { data: balanceData, error: balanceError } = await supabase
+      .from('balance')
+      .select('amount')
+      .eq('account_id', targetAccountId)
+      .single();
     
-    const currentBalance = balanceResult.rows.length > 0 
-      ? Number(balanceResult.rows[0].amount)
-      : 0;
+    if (balanceError && balanceError.code !== 'PGRST116') {
+      console.error('Error fetching balance:', balanceError);
+      return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 });
+    }
+    
+    const currentBalance = balanceData ? Number(balanceData.amount) : 0;
 
     // 计算新余额
     const newBalance = type === 'deposit' 
@@ -77,32 +76,48 @@ export async function POST(request: Request) {
 
     // 余额不能为负数
     if (newBalance < 0) {
-      await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
     }
 
     // 创建出入金记录
-    const recordResult = await client.query(
-      'INSERT INTO fund_records (type, amount, date, account_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [type, String(amount), date, targetAccountId]
-    );
+    const { data: record, error: recordError } = await supabase
+      .from('fund_records')
+      .insert({
+        type,
+        amount: Number(amount),
+        date,
+        account_id: targetAccountId
+      })
+      .select()
+      .single();
 
-    // 更新余额
-    if (balanceResult.rows.length > 0) {
-      await client.query(
-        'UPDATE balance SET amount = $1 WHERE account_id = $2',
-        [String(newBalance), targetAccountId]
-      );
-    } else {
-      await client.query(
-        'INSERT INTO balance (amount, account_id) VALUES ($1, $2)',
-        [String(newBalance), targetAccountId]
-      );
+    if (recordError) {
+      console.error('Error creating fund record:', recordError);
+      return NextResponse.json({ error: 'Failed to create fund record' }, { status: 500 });
     }
 
-    await client.query('COMMIT');
+    // 更新余额
+    if (balanceData) {
+      const { error: updateError } = await supabase
+        .from('balance')
+        .update({ amount: newBalance })
+        .eq('account_id', targetAccountId);
 
-    const record = recordResult.rows[0];
+      if (updateError) {
+        console.error('Error updating balance:', updateError);
+        return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 });
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from('balance')
+        .insert({ amount: newBalance, account_id: targetAccountId });
+
+      if (insertError) {
+        console.error('Error inserting balance:', insertError);
+        return NextResponse.json({ error: 'Failed to insert balance' }, { status: 500 });
+      }
+    }
+
     return NextResponse.json({
       record: {
         id: record.id,
@@ -115,50 +130,47 @@ export async function POST(request: Request) {
       balance: newBalance,
     });
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {
-      // Ignore
-    }
     console.error('Error creating fund record:', error);
     return NextResponse.json({ error: 'Failed to create fund record' }, { status: 500 });
-  } finally {
-    client.release();
   }
 }
 
 export async function DELETE(request: Request) {
-  const client = await pool.connect();
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const accountId = searchParams.get('accountId');
-    const targetAccountId = accountId || 1;
+    const targetAccountId = accountId || '00000000-0000-0000-0000-000000000001';
 
     if (!id) {
       return NextResponse.json({ error: 'Fund record ID is required' }, { status: 400 });
     }
 
-    await client.query('BEGIN');
-
     // 获取要删除的记录
-    const recordResult = await client.query('SELECT * FROM fund_records WHERE id = $1', [id]);
-    if (recordResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+    const { data: record, error: recordError } = await supabase
+      .from('fund_records')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (recordError) {
+      console.error('Error fetching fund record:', recordError);
       return NextResponse.json({ error: 'Fund record not found' }, { status: 404 });
     }
 
-    const record = recordResult.rows[0];
-
     // 获取当前余额
-    const balanceResult = await client.query(
-      'SELECT amount FROM balance WHERE account_id = $1',
-      [targetAccountId]
-    );
+    const { data: balanceData, error: balanceError } = await supabase
+      .from('balance')
+      .select('amount')
+      .eq('account_id', targetAccountId)
+      .single();
     
-    const currentBalance = balanceResult.rows.length > 0 
-      ? Number(balanceResult.rows[0].amount)
-      : 0;
+    if (balanceError && balanceError.code !== 'PGRST116') {
+      console.error('Error fetching balance:', balanceError);
+      return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 });
+    }
+    
+    const currentBalance = balanceData ? Number(balanceData.amount) : 0;
 
     // 计算新余额
     const newBalance = record.type === 'deposit'
@@ -167,33 +179,36 @@ export async function DELETE(request: Request) {
 
     // 余额不能为负数
     if (newBalance < 0) {
-      await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
     }
 
     // 删除记录
-    await client.query('DELETE FROM fund_records WHERE id = $1', [id]);
+    const { error: deleteError } = await supabase
+      .from('fund_records')
+      .delete()
+      .eq('id', id);
 
-    // 更新余额
-    if (balanceResult.rows.length > 0) {
-      await client.query(
-        'UPDATE balance SET amount = $1 WHERE account_id = $2',
-        [String(newBalance), targetAccountId]
-      );
+    if (deleteError) {
+      console.error('Error deleting fund record:', deleteError);
+      return NextResponse.json({ error: 'Failed to delete fund record' }, { status: 500 });
     }
 
-    await client.query('COMMIT');
+    // 更新余额
+    if (balanceData) {
+      const { error: updateError } = await supabase
+        .from('balance')
+        .update({ amount: newBalance })
+        .eq('account_id', targetAccountId);
+
+      if (updateError) {
+        console.error('Error updating balance:', updateError);
+        return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 });
+      }
+    }
 
     return NextResponse.json({ success: true, balance: newBalance });
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {
-      // Ignore
-    }
     console.error('Error deleting fund record:', error);
     return NextResponse.json({ error: 'Failed to delete fund record' }, { status: 500 });
-  } finally {
-    client.release();
   }
 }

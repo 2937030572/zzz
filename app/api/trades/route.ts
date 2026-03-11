@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
+import { createClient } from '@supabase/supabase-js';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+// 创建 Supabase 客户端
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!
+);
 
 export async function GET(request: Request) {
   try {
@@ -12,31 +14,26 @@ export async function GET(request: Request) {
     const endDate = searchParams.get('endDate');
     const accountId = searchParams.get('accountId');
 
-    let query = 'SELECT * FROM trades';
-    const params: any[] = [];
-    const conditions: string[] = [];
+    let query = supabase.from('trades').select('*');
 
     if (accountId) {
-      conditions.push(`account_id = $${params.length + 1}`);
-      params.push(accountId);
+      query = query.eq('account_id', accountId);
     }
 
     if (startDate && endDate) {
-      conditions.push(`date >= $${params.length + 1}`);
-      params.push(startDate);
-      conditions.push(`date <= $${params.length + 1}`);
-      params.push(endDate);
+      query = query.gte('date', startDate).lte('date', endDate);
     }
 
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
+    query = query.order('created_at', { ascending: false });
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching trades:', error);
+      return NextResponse.json({ error: 'Failed to fetch trades' }, { status: 500 });
     }
 
-    query += ' ORDER BY created_at DESC';
-
-    const result = await pool.query(query, params);
-
-    const trades = result.rows.map((row: any) => ({
+    const trades = data.map((row: any) => ({
       id: row.id,
       symbol: row.symbol,
       strategy: row.strategy,
@@ -61,53 +58,49 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const client = await pool.connect();
   try {
     const body = await request.json();
     const { accountId } = body;
-    const targetAccountId = accountId || 1;
+    const targetAccountId = accountId || '00000000-0000-0000-0000-000000000001';
 
-    await client.query('BEGIN');
-
-    // 处理 SQL 值
+    // 处理数据
     const symbol = body.symbol || '';
-    const strategy = (body.strategy || '').replace(/'/g, "''");
+    const strategy = body.strategy || '';
     const position = body.position ?? 0;
-    const openAmount = String(body.openAmount ?? 0);
-    const openTime = (body.openTime || '').replace(/'/g, "''");
+    const openAmount = body.openAmount ?? 0;
+    const openTime = body.openTime || '';
     const date = body.date || '';
     const isClosed = body.isClosed ?? true;
+    const closeReason = body.closeReason;
+    const remark = body.remark;
+    const profitLoss = body.profitLoss ?? 0;
 
-    let closeReasonSql = 'NULL';
-    if (body.closeReason !== undefined && body.closeReason !== null) {
-      closeReasonSql = `'${body.closeReason.replace(/'/g, "''")}'`;
+    // 开始事务
+    const { data: trade, error: tradeError } = await supabase
+      .from('trades')
+      .insert({
+        symbol,
+        strategy,
+        position,
+        open_amount: Number(openAmount),
+        open_time: openTime,
+        close_reason: closeReason,
+        remark: remark,
+        profit_loss: Number(profitLoss),
+        date,
+        is_closed: isClosed,
+        account_id: targetAccountId
+      })
+      .select()
+      .single();
+
+    if (tradeError) {
+      console.error('Error creating trade:', tradeError);
+      return NextResponse.json({
+        error: 'Failed to create trade',
+        details: tradeError?.message || 'Unknown error',
+      }, { status: 500 });
     }
-
-    let remarkSql = 'NULL';
-    if (body.remark !== undefined && body.remark !== null) {
-      remarkSql = `'${body.remark.replace(/'/g, "''")}'`;
-    }
-
-    let profitLoss = '0';
-    if (body.profitLoss !== undefined && body.profitLoss !== null) {
-      profitLoss = String(body.profitLoss);
-    }
-
-    // 执行原始 SQL
-    const query = `
-      INSERT INTO trades (
-        symbol, strategy, position, open_amount, open_time,
-        close_reason, remark, profit_loss, date, is_closed, account_id
-      )
-      VALUES (
-        '${symbol}', '${strategy}', ${position}, '${openAmount}', '${openTime}',
-        ${closeReasonSql}, ${remarkSql}, '${profitLoss}', '${date}', ${isClosed}, ${targetAccountId}
-      )
-      RETURNING *
-    `;
-
-    const result = await client.query(query);
-    const trade = result.rows[0];
 
     // 计算新余额
     let newBalance = 0;
@@ -115,37 +108,46 @@ export async function POST(request: Request) {
       const profitLossNum = Number(body.profitLoss);
       
       // 获取当前账户余额
-      const balanceResult = await client.query(
-        'SELECT amount FROM balance WHERE account_id = $1',
-        [targetAccountId]
-      );
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('balance')
+        .select('amount')
+        .eq('account_id', targetAccountId)
+        .single();
       
-      const currentBalance = balanceResult.rows.length > 0 
-        ? Number(balanceResult.rows[0].amount)
-        : 0;
+      if (balanceError && balanceError.code !== 'PGRST116') {
+        console.error('Error fetching balance:', balanceError);
+        return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 });
+      }
       
+      const currentBalance = balanceData ? Number(balanceData.amount) : 0;
       newBalance = currentBalance + profitLossNum;
 
       if (newBalance < 0) {
-        await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
       }
 
       // 更新余额
-      if (balanceResult.rows.length > 0) {
-        await client.query(
-          'UPDATE balance SET amount = $1 WHERE account_id = $2',
-          [String(newBalance), targetAccountId]
-        );
+      if (balanceData) {
+        const { error: updateError } = await supabase
+          .from('balance')
+          .update({ amount: newBalance })
+          .eq('account_id', targetAccountId);
+
+        if (updateError) {
+          console.error('Error updating balance:', updateError);
+          return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 });
+        }
       } else {
-        await client.query(
-          'INSERT INTO balance (amount, account_id) VALUES ($1, $2)',
-          [String(newBalance), targetAccountId]
-        );
+        const { error: insertError } = await supabase
+          .from('balance')
+          .insert({ amount: newBalance, account_id: targetAccountId });
+
+        if (insertError) {
+          console.error('Error inserting balance:', insertError);
+          return NextResponse.json({ error: 'Failed to insert balance' }, { status: 500 });
+        }
       }
     }
-
-    await client.query('COMMIT');
 
     return NextResponse.json({
       trade: {
@@ -167,222 +169,190 @@ export async function POST(request: Request) {
       balance: newBalance,
     });
   } catch (error: any) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {
-      // Ignore rollback error
-    }
     console.error('Error creating trade:', error);
     return NextResponse.json({
       error: 'Failed to create trade',
       details: error?.message || 'Unknown error',
     }, { status: 500 });
-  } finally {
-    client.release();
   }
 }
 
 export async function PUT(request: Request) {
-  const client = await pool.connect();
   try {
     const body = await request.json();
     const { id, profitLoss: newProfitLoss, accountId, ...data } = body;
-    const targetAccountId = accountId || 1;
-
-    await client.query('BEGIN');
+    const targetAccountId = accountId || '00000000-0000-0000-0000-000000000001';
 
     // 获取旧交易记录
-    const oldTradeResult = await client.query('SELECT * FROM trades WHERE id = $1', [id]);
-    if (oldTradeResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+    const { data: oldTrade, error: oldTradeError } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (oldTradeError) {
+      console.error('Error fetching old trade:', oldTradeError);
       return NextResponse.json({ error: 'Trade not found' }, { status: 404 });
     }
-    const oldTrade = oldTradeResult.rows[0];
 
     const actualNewProfitLoss = newProfitLoss !== undefined && newProfitLoss !== null && newProfitLoss !== ''
       ? newProfitLoss
       : Number(oldTrade.profit_loss);
 
-    // 构建更新 SQL
-    const updateParts: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    // 构建更新数据
+    const updateData: any = {};
+    if (data.symbol !== undefined) updateData.symbol = data.symbol;
+    if (data.strategy !== undefined) updateData.strategy = data.strategy;
+    if (data.position !== undefined) updateData.position = data.position;
+    if (data.openAmount !== undefined) updateData.open_amount = Number(data.openAmount);
+    if (data.openTime !== undefined) updateData.open_time = data.openTime;
+    if (data.closeReason !== undefined) updateData.close_reason = data.closeReason;
+    if (data.remark !== undefined) updateData.remark = data.remark;
+    if (newProfitLoss !== undefined) updateData.profit_loss = Number(newProfitLoss);
+    if (data.date !== undefined) updateData.date = data.date;
+    if (data.isClosed !== undefined) updateData.is_closed = data.isClosed;
+    updateData.updated_at = new Date().toISOString();
 
-    if (data.symbol !== undefined) {
-      updateParts.push(`symbol = $${paramIndex}`);
-      values.push(data.symbol);
-      paramIndex++;
-    }
-    if (data.strategy !== undefined) {
-      updateParts.push(`strategy = $${paramIndex}`);
-      values.push(data.strategy);
-      paramIndex++;
-    }
-    if (data.position !== undefined) {
-      updateParts.push(`position = $${paramIndex}`);
-      values.push(data.position);
-      paramIndex++;
-    }
-    if (data.openAmount !== undefined) {
-      updateParts.push(`open_amount = $${paramIndex}`);
-      values.push(String(data.openAmount));
-      paramIndex++;
-    }
-    if (data.openTime !== undefined) {
-      updateParts.push(`open_time = $${paramIndex}`);
-      values.push(data.openTime);
-      paramIndex++;
-    }
-    if (data.closeReason !== undefined) {
-      updateParts.push(`close_reason = $${paramIndex}`);
-      values.push(data.closeReason);
-      paramIndex++;
-    }
-    if (data.remark !== undefined) {
-      updateParts.push(`remark = $${paramIndex}`);
-      values.push(data.remark);
-      paramIndex++;
-    }
-    if (newProfitLoss !== undefined) {
-      updateParts.push(`profit_loss = $${paramIndex}`);
-      values.push(String(newProfitLoss));
-      paramIndex++;
-    }
-    if (data.date !== undefined) {
-      updateParts.push(`date = $${paramIndex}`);
-      values.push(data.date);
-      paramIndex++;
-    }
-    if (data.isClosed !== undefined) {
-      updateParts.push(`is_closed = $${paramIndex}`);
-      values.push(data.isClosed);
-      paramIndex++;
-    }
+    // 更新交易记录
+    if (Object.keys(updateData).length > 0) {
+      const { error: updateError } = await supabase
+        .from('trades')
+        .update(updateData)
+        .eq('id', id);
 
-    if (updateParts.length > 0) {
-      updateParts.push(`updated_at = CURRENT_TIMESTAMP`);
-      values.push(id);
-      const updateQuery = `UPDATE trades SET ${updateParts.join(', ')} WHERE id = $${paramIndex}`;
-      await client.query(updateQuery, values);
+      if (updateError) {
+        console.error('Error updating trade:', updateError);
+        return NextResponse.json({ error: 'Failed to update trade' }, { status: 500 });
+      }
     }
 
     // 计算新余额
     let newBalance = 0;
     if (newProfitLoss !== undefined) {
-      const balanceResult = await client.query(
-        'SELECT amount FROM balance WHERE account_id = $1',
-        [targetAccountId]
-      );
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('balance')
+        .select('amount')
+        .eq('account_id', targetAccountId)
+        .single();
       
-      const currentBalance = balanceResult.rows.length > 0 
-        ? Number(balanceResult.rows[0].amount)
-        : 0;
+      if (balanceError && balanceError.code !== 'PGRST116') {
+        console.error('Error fetching balance:', balanceError);
+        return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 });
+      }
       
+      const currentBalance = balanceData ? Number(balanceData.amount) : 0;
       const oldProfitLoss = Number(oldTrade.profit_loss);
-      newBalance = currentBalance - oldProfitLoss + actualNewProfitLoss;
+      newBalance = currentBalance - oldProfitLoss + Number(actualNewProfitLoss);
 
       if (newBalance < 0) {
-        await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
       }
 
-      if (balanceResult.rows.length > 0) {
-        await client.query(
-          'UPDATE balance SET amount = $1 WHERE account_id = $2',
-          [String(newBalance), targetAccountId]
-        );
+      if (balanceData) {
+        const { error: updateError } = await supabase
+          .from('balance')
+          .update({ amount: newBalance })
+          .eq('account_id', targetAccountId);
+
+        if (updateError) {
+          console.error('Error updating balance:', updateError);
+          return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 });
+        }
       } else {
-        await client.query(
-          'INSERT INTO balance (amount, account_id) VALUES ($1, $2)',
-          [String(newBalance), targetAccountId]
-        );
+        const { error: insertError } = await supabase
+          .from('balance')
+          .insert({ amount: newBalance, account_id: targetAccountId });
+
+        if (insertError) {
+          console.error('Error inserting balance:', insertError);
+          return NextResponse.json({ error: 'Failed to insert balance' }, { status: 500 });
+        }
       }
     }
-
-    await client.query('COMMIT');
 
     return NextResponse.json({
       trade: { id, ...data, profitLoss: actualNewProfitLoss, accountId: targetAccountId },
       balance: newBalance
     });
   } catch (error: any) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {
-      // Ignore
-    }
     console.error('Error updating trade:', error);
     return NextResponse.json({ error: 'Failed to update trade' }, { status: 500 });
-  } finally {
-    client.release();
   }
 }
 
 export async function DELETE(request: Request) {
-  const client = await pool.connect();
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const accountId = searchParams.get('accountId');
-    const targetAccountId = accountId || 1;
+    const targetAccountId = accountId || '00000000-0000-0000-0000-000000000001';
 
     if (!id) {
       return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
     }
 
-    await client.query('BEGIN');
-
     // 获取要删除的交易记录
-    const tradeResult = await client.query('SELECT * FROM trades WHERE id = $1', [id]);
-    if (tradeResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+    const { data: trade, error: tradeError } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (tradeError) {
+      console.error('Error fetching trade:', tradeError);
       return NextResponse.json({ error: 'Trade not found' }, { status: 404 });
     }
 
-    const trade = tradeResult.rows[0];
     const profitLoss = Number(trade.profit_loss);
 
     // 删除交易记录
-    await client.query('DELETE FROM trades WHERE id = $1', [id]);
+    const { error: deleteError } = await supabase
+      .from('trades')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      console.error('Error deleting trade:', deleteError);
+      return NextResponse.json({ error: 'Failed to delete trade' }, { status: 500 });
+    }
 
     // 更新余额
     let newBalance = 0;
     if (profitLoss !== 0) {
-      const balanceResult = await client.query(
-        'SELECT amount FROM balance WHERE account_id = $1',
-        [targetAccountId]
-      );
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('balance')
+        .select('amount')
+        .eq('account_id', targetAccountId)
+        .single();
       
-      const currentBalance = balanceResult.rows.length > 0 
-        ? Number(balanceResult.rows[0].amount)
-        : 0;
+      if (balanceError && balanceError.code !== 'PGRST116') {
+        console.error('Error fetching balance:', balanceError);
+        return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 });
+      }
       
+      const currentBalance = balanceData ? Number(balanceData.amount) : 0;
       newBalance = currentBalance - profitLoss;
 
       if (newBalance < 0) {
         newBalance = 0; // 防止负数
       }
 
-      if (balanceResult.rows.length > 0) {
-        await client.query(
-          'UPDATE balance SET amount = $1 WHERE account_id = $2',
-          [String(newBalance), targetAccountId]
-        );
+      if (balanceData) {
+        const { error: updateError } = await supabase
+          .from('balance')
+          .update({ amount: newBalance })
+          .eq('account_id', targetAccountId);
+
+        if (updateError) {
+          console.error('Error updating balance:', updateError);
+          return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 });
+        }
       }
     }
 
-    await client.query('COMMIT');
-
     return NextResponse.json({ success: true, balance: newBalance });
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {
-      // Ignore
-    }
     console.error('Error deleting trade:', error);
     return NextResponse.json({ error: 'Failed to delete trade' }, { status: 500 });
-  } finally {
-    client.release();
   }
 }
