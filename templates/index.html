@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance 市场监控</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#00B42A',
+                        secondary: '#F5F5F5',
+                        danger: '#F53F3F',
+                        warning: '#FF7D00',
+                        info: '#165DFF',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .animate-pulse-slow {
+                animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <div class="min-h-screen flex flex-col">
+        <!-- 导航栏 -->
+        <header class="bg-white shadow-md">
+            <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <i class="fa fa-line-chart text-primary text-2xl"></i>
+                    <h1 class="text-xl font-bold text-gray-800">Binance 市场监控</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="refreshBtn" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-md flex items-center space-x-2">
+                        <i class="fa fa-refresh"></i>
+                        <span>刷新数据</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主内容 -->
+        <main class="flex-grow container mx-auto px-4 py-6">
+            <!-- 交易对选择 -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <div class="flex flex-wrap gap-4 items-center">
+                    <div class="flex-1 min-w-[300px]">
+                        <label for="symbol" class="block text-sm font-medium text-gray-700 mb-1">交易对</label>
+                        <div class="relative">
+                            <select id="symbol" class="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                <option value="BTCUSDT">BTC/USDT</option>
+                                <option value="ETHUSDT">ETH/USDT</option>
+                                <option value="BNBUSDT">BNB/USDT</option>
+                                <option value="SOLUSDT">SOL/USDT</option>
+                                <option value="DOGEUSDT">DOGE/USDT</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="monitorBtn" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-md flex items-center space-x-2">
+                            <i class="fa fa-search"></i>
+                            <span>开始监控</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 市场数据卡片 -->
+            <div id="loading" class="flex justify-center items-center py-12">
+                <div class="text-center">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+                    <p class="mt-4 text-gray-600">加载市场数据中...</p>
+                </div>
+            </div>
+
+            <div id="marketData" class="hidden">
+                <!-- 价格卡片 -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <h3 class="text-sm font-medium text-gray-500">当前价格</h3>
+                        <p id="currentPrice" class="text-2xl font-bold text-gray-800 mt-1">--</p>
+                        <div id="priceChange" class="mt-2 flex items-center">
+                            <span class="text-sm font-medium"></span>
+                            <span class="text-sm ml-1"></span>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <h3 class="text-sm font-medium text-gray-500">24小时成交量</h3>
+                        <p id="volume" class="text-2xl font-bold text-gray-800 mt-1">--</p>
+                        <p class="text-xs text-gray-500 mt-1">基础资产</p>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <h3 class="text-sm font-medium text-gray-500">24小时成交额</h3>
+                        <p id="quoteVolume" class="text-2xl font-bold text-gray-800 mt-1">--</p>
+                        <p class="text-xs text-gray-500 mt-1">USDT</p>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <h3 class="text-sm font-medium text-gray-500">20周期移动平均</h3>
+                        <p id="movingAverage" class="text-2xl font-bold text-gray-800 mt-1">--</p>
+                        <div id="maDiff" class="mt-2 flex items-center">
+                            <span class="text-sm font-medium"></span>
+                            <span class="text-sm ml-1"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 报警信息 -->
+                <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                        <i class="fa fa-bell text-warning mr-2"></i>
+                        报警信息
+                    </h3>
+                    <div id="alerts" class="space-y-2">
+                        <div class="text-gray-500 text-center py-4">
+                            暂无报警信息
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 历史数据图表 -->
+                <div class="bg-white rounded-lg shadow-md p-4">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                        <i class="fa fa-area-chart text-info mr-2"></i>
+                        价格趋势
+                    </h3>
+                    <div class="h-64">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="bg-white shadow-inner py-4">
+            <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+                <p>Binance 市场监控系统 © 2026</p>
+                <p class="mt-1">数据来源: Binance API</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+
+    <script>
+        // 全局变量
+        let priceChart = null;
+        let priceHistory = [];
+        let timeHistory = [];
+        const maxDataPoints = 20;
+
+        // DOM 元素
+        const loadingElement = document.getElementById('loading');
+        const marketDataElement = document.getElementById('marketData');
+        const symbolSelect = document.getElementById('symbol');
+        const monitorBtn = document.getElementById('monitorBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+
+        // 初始化图表
+        function initChart() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '价格 (USDT)',
+                        data: [],
+                        borderColor: '#165DFF',
+                        backgroundColor: 'rgba(22, 93, 255, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#165DFF'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '时间'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '价格 (USDT)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新图表数据
+        function updateChart(price) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+
+            // 添加新数据
+            priceHistory.push(price);
+            timeHistory.push(timeStr);
+
+            // 限制数据点数量
+            if (priceHistory.length > maxDataPoints) {
+                priceHistory.shift();
+                timeHistory.shift();
+            }
+
+            // 更新图表
+            if (priceChart) {
+                priceChart.data.labels = timeHistory;
+                priceChart.data.datasets[0].data = priceHistory;
+                priceChart.update();
+            }
+        }
+
+        // 获取市场数据
+        async function fetchMarketData() {
+            const symbol = symbolSelect.value;
+            
+            try {
+                // 显示加载状态
+                loadingElement.classList.remove('hidden');
+                marketDataElement.classList.add('hidden');
+
+                // 调用API
+                const response = await fetch(`/api/market-monitor?symbol=${symbol}`);
+                if (!response.ok) {
+                    throw new Error('API请求失败');
+                }
+                
+                const data = await response.json();
+                
+                // 更新UI
+                document.getElementById('currentPrice').textContent = data.current_price.toFixed(2);
+                
+                // 更新价格变化
+                const priceChangeElement = document.getElementById('priceChange');
+                const priceChangePercent = data.price_change_percent_24h;
+                const priceChangeClass = priceChangePercent >= 0 ? 'text-primary' : 'text-danger';
+                const priceChangeIcon = priceChangePercent >= 0 ? 'fa-caret-up' : 'fa-caret-down';
+                priceChangeElement.innerHTML = `
+                    <span class="text-sm font-medium ${priceChangeClass}">
+                        <i class="fa ${priceChangeIcon}"></i> ${Math.abs(priceChangePercent).toFixed(2)}%
+                    </span>
+                    <span class="text-sm ml-1 text-gray-500">24h</span>
+                `;
+                
+                // 更新成交量
+                document.getElementById('volume').textContent = data.volume_24h.toLocaleString();
+                document.getElementById('quoteVolume').textContent = data.quote_volume_24h.toLocaleString();
+                
+                // 更新移动平均线
+                document.getElementById('movingAverage').textContent = data.moving_average_20.toFixed(2);
+                
+                // 更新移动平均线差异
+                const maDiffElement = document.getElementById('maDiff');
+                const maDiffPercent = data.price_ma_diff_percent;
+                const maDiffClass = maDiffPercent >= 0 ? 'text-primary' : 'text-danger';
+                const maDiffIcon = maDiffPercent >= 0 ? 'fa-caret-up' : 'fa-caret-down';
+                maDiffElement.innerHTML = `
+                    <span class="text-sm font-medium ${maDiffClass}">
+                        <i class="fa ${maDiffIcon}"></i> ${Math.abs(maDiffPercent).toFixed(2)}%
+                    </span>
+                    <span class="text-sm ml-1 text-gray-500">vs 20周期MA</span>
+                `;
+                
+                // 更新报警信息
+                const alertsElement = document.getElementById('alerts');
+                if (data.alerts && data.alerts.length > 0) {
+                    alertsElement.innerHTML = data.alerts.map(alert => `
+                        <div class="bg-warning/10 border-l-4 border-warning p-3 rounded-r-md">
+                            <p class="text-sm text-gray-800">${alert}</p>
+                        </div>
+                    `).join('');
+                } else {
+                    alertsElement.innerHTML = `
+                        <div class="text-gray-500 text-center py-4">
+                            暂无报警信息
+                        </div>
+                    `;
+                }
+                
+                // 更新图表
+                updateChart(data.current_price);
+                
+                // 显示数据
+                loadingElement.classList.add('hidden');
+                marketDataElement.classList.remove('hidden');
+                
+            } catch (error) {
+                console.error('获取市场数据失败:', error);
+                loadingElement.innerHTML = `
+                    <div class="text-center">
+                        <i class="fa fa-exclamation-circle text-danger text-3xl mb-2"></i>
+                        <p class="text-danger">获取数据失败: ${error.message}</p>
+                        <button id="retryBtn" class="mt-4 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-md">
+                            重试
+                        </button>
+                    </div>
+                `;
+                
+                // 添加重试按钮事件
+                document.getElementById('retryBtn').addEventListener('click', fetchMarketData);
+            }
+        }
+
+        // 初始化
+        function init() {
+            // 初始化图表
+            initChart();
+            
+            // 绑定事件
+            monitorBtn.addEventListener('click', fetchMarketData);
+            refreshBtn.addEventListener('click', fetchMarketData);
+            
+            // 初始加载数据
+            fetchMarketData();
+            
+            // 每30秒自动刷新数据
+            setInterval(fetchMarketData, 30000);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
