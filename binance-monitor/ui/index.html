@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>币安行情监控</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+        h2 {
+            color: #444;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #40a9ff;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        .alert {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .alert-success {
+            background-color: #f6ffed;
+            border: 1px solid #b7eb8f;
+            color: #52c41a;
+        }
+        .alert-error {
+            background-color: #fff2f0;
+            border: 1px solid #ffccc7;
+            color: #ff4d4f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>币安行情监控</h1>
+        
+        <!-- 实时行情 -->
+        <div class="section">
+            <h2>实时行情</h2>
+            <div class="form-group">
+                <label for="symbol">交易对</label>
+                <select id="symbol">
+                    <option value="ETHUSDT">ETH/USDT</option>
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="BNBUSDT">BNB/USDT</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="ticker-interval">时间周期</label>
+                <select id="ticker-interval">
+                    <option value="1m">1分钟</option>
+                    <option value="5m">5分钟</option>
+                    <option value="15m" selected>15分钟</option>
+                    <option value="30m">30分钟</option>
+                    <option value="1h">1小时</option>
+                    <option value="2h">2小时</option>
+                    <option value="4h">4小时</option>
+                    <option value="1d">1天</option>
+                </select>
+            </div>
+
+            <button onclick="getTicker()">手动获取价格</button>
+            <div class="result" id="ticker-result"></div>
+        </div>
+        
+
+        
+        <!-- 报警设置 -->
+        <div class="section">
+            <h2>报警设置</h2>
+            <div class="form-group">
+                <label for="alert-symbol">交易对</label>
+                <select id="alert-symbol">
+                    <option value="ETHUSDT">ETH/USDT</option>
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="BNBUSDT">BNB/USDT</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="alert-interval">K线周期</label>
+                <select id="alert-interval">
+                    <option value="1m">1分钟</option>
+                    <option value="5m">5分钟</option>
+                    <option value="15m" selected>15分钟</option>
+                    <option value="30m">30分钟</option>
+                    <option value="1h">1小时</option>
+                    <option value="2h">2小时</option>
+                    <option value="4h">4小时</option>
+                    <option value="1d">1天</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="alert-type">报警类型</label>
+                <select id="alert-type">
+                    <option value="bollinger_bandwidth">布林带宽度</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="alert-bb-period">布林带周期</label>
+                <select id="alert-bb-period">
+                    <option value="20">20</option>
+                    <option value="40">40</option>
+                    <option value="80">80</option>
+                    <option value="160">160</option>
+                    <option value="320">320</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="alert-condition">条件</label>
+                <select id="alert-condition">
+                    <option value="above">大于</option>
+                    <option value="below">小于</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="alert-threshold">阈值</label>
+                <input type="number" id="alert-threshold" step="0.01" value="5">
+            </div>
+            <div class="form-group">
+                <label for="alert-email">邮箱地址</label>
+                <input type="email" id="alert-email" placeholder="输入接收报警的邮箱">
+            </div>
+            <button onclick="setAlert()">设置报警</button>
+            <div class="result" id="alert-result"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 实时价格更新函数
+        async function getTicker() {
+            const symbol = document.getElementById('symbol').value;
+            const interval = document.getElementById('ticker-interval').value;
+            const resultDiv = document.getElementById('ticker-result');
+            
+            try {
+                // 获取当前价格
+                const tickerResponse = await fetch(`/api/ticker?symbol=${symbol}`);
+                const tickerData = await tickerResponse.json();
+                
+                // 获取K线数据用于计算指标
+                const klinesResponse = await fetch(`/api/klines?symbol=${symbol}&interval=${interval}&limit=320`);
+                const klinesData = await klinesResponse.json();
+                
+                // 提取收盘价
+                const prices = klinesData.map(kline => parseFloat(kline[4]));
+                
+                // 计算不同参数的布林带宽度
+                const bollingerParams = [20, 40, 80, 160, 320];
+                let bollingerResults = [];
+                
+                for (const period of bollingerParams) {
+                    if (prices.length >= period) {
+                        const indicatorResponse = await fetch('/api/indicators', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                indicator_type: 'bollinger_bands',
+                                prices: prices,
+                                params: {
+                                    period: period
+                                }
+                            })
+                        });
+                        
+                        const indicatorData = await indicatorResponse.json();
+                        bollingerResults.push({
+                            period: period,
+                            bandwidth: indicatorData.bandwidth[indicatorData.bandwidth.length - 1]
+                        });
+                    } else {
+                        bollingerResults.push({
+                            period: period,
+                            bandwidth: null
+                        });
+                    }
+                }
+                
+                // 构建价格和布林带宽度的HTML
+                let html = `
+                    <h3>${symbol} 当前价格</h3>
+                    <p>价格: ${tickerData.price} USDT</p>
+                    <p>更新时间: ${new Date().toLocaleString()}</p>
+                    <h4>布林带宽度指标 (周期: ${interval})</h4>
+                    <ul>
+                `;
+                
+                for (const result of bollingerResults) {
+                    if (result.bandwidth !== null) {
+                        html += `<li>参数 ${result.period}: ${result.bandwidth.toFixed(2)}</li>`;
+                    } else {
+                        html += `<li>参数 ${result.period}: 数据不足</li>`;
+                    }
+                }
+                
+                html += `</ul>`;
+                resultDiv.innerHTML = html;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-error">获取价格失败: ${error.message}</div>`;
+            }
+        }
+        
+
+        
+        async function setAlert() {
+            const symbol = document.getElementById('alert-symbol').value;
+            const interval = document.getElementById('alert-interval').value;
+            const alertType = document.getElementById('alert-type').value;
+            const bbPeriod = document.getElementById('alert-bb-period').value;
+            const condition = document.getElementById('alert-condition').value;
+            const threshold = document.getElementById('alert-threshold').value;
+            const email = document.getElementById('alert-email').value;
+            const resultDiv = document.getElementById('alert-result');
+            
+            try {
+                const response = await fetch('/api/set_alert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        interval: interval,
+                        alert_type: alertType,
+                        bb_period: bbPeriod,
+                        condition: condition,
+                        threshold: parseFloat(threshold),
+                        email: email
+                    })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-error">设置报警失败: ${error.message}</div>`;
+            }
+        }
+        
+        // 初始加载时获取一次价格
+        window.onload = function() {
+            getTicker();
+            // 每十秒自动更新价格
+            setInterval(getTicker, 10000);
+        };
+    </script>
+</body>
+</html>
