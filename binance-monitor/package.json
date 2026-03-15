@@ -1,0 +1,16 @@
+{
+  "name": "binance-monitor",
+  "version": "1.0.0",
+  "description": "币安行情监控应用",
+  "main": "app.py",
+  "scripts": {
+    "start": "python app.py"
+  },
+  "keywords": [
+    "binance",
+    "crypto",
+    "monitoring"
+  ],
+  "author": "",
+  "license": "MIT"
+}
