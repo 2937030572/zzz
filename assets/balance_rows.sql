@@ -1,0 +1,1 @@
+INSERT INTO "public"."balance" ("id", "amount", "updated_at", "account_id") VALUES ('abca4a97-fd94-4db5-8d64-f8fa82d4f40c', '48.2', '2026-03-10 11:47:24.326+08', null), ('e9e3ec6d-4c88-4129-8ada-f97bb5679f57', '0', '2026-03-10 22:02:57.118633+08', '1');
