@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
-
-// 创建数据库连接池
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import supabase from '@/lib/supabase';
 
 export async function GET() {
   try {
-    const result = await pool.query('SELECT * FROM equity_history ORDER BY date ASC');
+    const { data, error } = await supabase
+      .from('equity_history')
+      .select('*')
+      .order('date', { ascending: true });
 
-    const history = result.rows.map((row: any) => ({
+    if (error) throw error;
+
+    const history = data.map((row: any) => ({
       id: row.id,
       date: row.date,
       value: Number(row.value),
@@ -28,19 +28,22 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const result = await pool.query(
-      'INSERT INTO equity_history (date, value) VALUES ($1, $2) RETURNING *',
-      [body.date, String(body.value)]
-    );
+    const { data: record, error } = await supabase
+      .from('equity_history')
+      .insert({ date: body.date, value: String(body.value) })
+      .select()
+      .single();
 
-    const record = {
-      id: result.rows[0].id,
-      date: result.rows[0].date,
-      value: Number(result.rows[0].value),
-      createdAt: result.rows[0].created_at,
-    };
+    if (error) throw error;
 
-    return NextResponse.json({ record });
+    return NextResponse.json({
+      record: {
+        id: record.id,
+        date: record.date,
+        value: Number(record.value),
+        createdAt: record.created_at,
+      }
+    });
   } catch (error) {
     console.error('Error creating equity history:', error);
     return NextResponse.json({ error: 'Failed to create equity history' }, { status: 500 });
@@ -49,7 +52,12 @@ export async function POST(request: Request) {
 
 export async function DELETE() {
   try {
-    await pool.query('DELETE FROM equity_history');
+    const { error } = await supabase
+      .from('equity_history')
+      .delete();
+
+    if (error) throw error;
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error clearing equity history:', error);

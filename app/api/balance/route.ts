@@ -1,32 +1,28 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import supabase from '@/lib/supabase';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get('accountId');
 
-    let query = 'SELECT * FROM balance';
-    const params: any[] = [];
+    let query = supabase.from('balance').select('*');
 
     if (accountId) {
-      query += ' WHERE account_id = $1';
-      params.push(accountId);
+      query = query.eq('account_id', accountId);
     }
 
-    const result = await pool.query(query, params);
+    const { data, error } = await query;
 
-    if (result.rows.length === 0) {
+    if (error) throw error;
+
+    if (data.length === 0) {
       // 如果没有余额记录，返回0
       return NextResponse.json({ balance: 0 });
     }
 
     // 处理amount字段，可能是字符串或对象
-    let amount = result.rows[0].amount;
+    let amount = data[0].amount;
     if (typeof amount === 'object' && amount !== null) {
       amount = 0;
     } else {
@@ -48,23 +44,31 @@ export async function POST(request: Request) {
     const targetAccountId = accountId || 1;
 
     // 检查该账户是否已有余额记录
-    const checkResult = await pool.query(
-      'SELECT id FROM balance WHERE account_id = $1',
-      [targetAccountId]
-    );
+    const { data: existing, error: checkError } = await supabase
+      .from('balance')
+      .select('id')
+      .eq('account_id', targetAccountId)
+      .single();
 
-    if (checkResult.rows.length === 0) {
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
+
+    if (!existing) {
       // 插入新记录
-      await pool.query(
-        'INSERT INTO balance (amount, account_id) VALUES ($1, $2)',
-        [String(amount), targetAccountId]
-      );
+      const { error: insertError } = await supabase
+        .from('balance')
+        .insert({ amount: String(amount), account_id: targetAccountId });
+
+      if (insertError) throw insertError;
     } else {
       // 更新现有记录
-      await pool.query(
-        'UPDATE balance SET amount = $1 WHERE account_id = $2',
-        [String(amount), targetAccountId]
-      );
+      const { error: updateError } = await supabase
+        .from('balance')
+        .update({ amount: String(amount) })
+        .eq('account_id', targetAccountId);
+
+      if (updateError) throw updateError;
     }
 
     return NextResponse.json({ balance: Number(amount) });
