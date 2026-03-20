@@ -16,32 +16,10 @@ import { BalanceCard } from '@/components/BalanceCard';
 import { EquityChart } from '@/components/EquityChart';
 import { TradingStats } from '@/components/TradingStats';
 import { TradeTable } from '@/components/TradeTable';
+import { Trade, FundRecord, PositionType } from '@/types';
 
 // 仓位选项：5% 到 50%，每个增加 5%
 const POSITION_OPTIONS = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
-
-type PositionType = 5 | 10 | 15 | 20 | 25 | 30 | 35 | 40 | 45 | 50;
-
-interface Trade {
-  id: string;
-  symbol: string; // 交易品种
-  strategy: string; // 入场策略
-  position: PositionType; // 仓位
-  openAmount: number; // 开仓金额
-  openTime: string; // 开仓时间
-  closeReason: 'profit' | 'loss' | 'other'; // 平仓原因
-  remark?: string; // 备注
-  profitLoss: number; // 盈亏金额
-  date: string; // 交易日期
-  isClosed: boolean; // 是否已平仓
-}
-
-interface FundRecord {
-  id: string;
-  type: 'deposit' | 'withdraw';
-  amount: number;
-  date: string;
-}
 
 export default function TradingApp() {
   // 使用交易数据钩子

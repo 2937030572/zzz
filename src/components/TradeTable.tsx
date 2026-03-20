@@ -2,20 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-
-interface Trade {
-  id: string;
-  symbol: string;
-  strategy: string;
-  position: number;
-  openAmount: number;
-  openTime: string;
-  closeReason: 'profit' | 'loss' | 'other';
-  remark?: string;
-  profitLoss: number;
-  date: string;
-  isClosed: boolean;
-}
+import { Trade } from '@/types';
 
 interface TradeTableProps {
   trades: Trade[];
