@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -15,6 +15,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Trash2, MoreVertical, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useTradingData } from '@/hooks/useTradingData';
+import { toast } from 'sonner';
 
 // 仓位选项：5% 到 50%，每个增加 5%
 const POSITION_OPTIONS = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
@@ -50,12 +52,26 @@ interface Account {
 }
 
 export default function TradingApp() {
-  // 账户状态
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [currentAccountId, setCurrentAccountId] = useState<number>(1);
+  // 使用自定义 hook 管理交易数据
+  const {
+    accounts,
+    currentAccountId,
+    setCurrentAccountId,
+    balance,
+    setBalance,
+    trades,
+    setTrades,
+    fundRecords,
+    setFundRecords,
+    loading,
+    error,
+    loadData
+  } = useTradingData();
+
+  // 账户管理状态
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
   const [newAccountName, setNewAccountName] = useState<string>('');
-  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const [editAccountName, setEditAccountName] = useState<string>('');
   
   // 时间段统计卡片选择状态
@@ -65,11 +81,6 @@ export default function TradingApp() {
     { id: 2, days: 6 },      // 默认一周
     { id: 3, days: 29 },     // 默认一月
   ]);
-  
-  // 初始资产余额
-  const [balance, setBalance] = useState<number>(0);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [fundRecords, setFundRecords] = useState<FundRecord[]>([]);
   
   // 资产走势图折叠状态
   const [isAssetChartOpen, setIsAssetChartOpen] = useState(false);
@@ -98,8 +109,16 @@ export default function TradingApp() {
   const [bollWidth, setBollWidth] = useState<'converged' | 'not_converged'>('not_converged');
   const [pattern, setPattern] = useState<'head_shoulders' | 'double_top_bottom' | 'triple_top_bottom' | 'triangle' | 'cup_handle' | 'channel' | 'none'>('none');
 
+  // 日期筛选状态
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
+
+  // 编辑相关状态
+  const [editingTrade, setEditingTrade] = useState<any | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
   // 计算交易级别
-  const calculateTradeLevel = (): { level: string; color: string; description: string; suggestion: string } => {
+  const calculateTradeLevel = useCallback((): { level: string; color: string; description: string; suggestion: string } => {
     // 1. 检查量能背离
     if (volumeTrend === 'no_trend') {
       return {
@@ -168,17 +187,13 @@ export default function TradingApp() {
         };
       }
     }
-  };
+  }, [volumeTrend, bollContraction, bollWidth, pattern]);
 
   // 获取交易级别信息
   const tradeLevel = calculateTradeLevel();
 
-  // 日期筛选状态
-  const [filterStartDate, setFilterStartDate] = useState<string>('');
-  const [filterEndDate, setFilterEndDate] = useState<string>('');
-
   // 快捷日期选择处理函数
-  const handleQuickDateFilter = (type: 'week' | 'month' | '3month' | 'halfYear' | 'year') => {
+  const handleQuickDateFilter = useCallback((type: 'week' | 'month' | '3month' | 'halfYear' | 'year') => {
     const today = new Date();
     const formatDate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -214,49 +229,7 @@ export default function TradingApp() {
         setFilterEndDate(formatDate(today));
         break;
     }
-  };
-
-  // 编辑相关状态
-  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  // 从数据库加载数据
-  // 加载账户列表
-  useEffect(() => {
-    const loadAccounts = async () => {
-      try {
-        const accountsRes = await api.accounts.getAll();
-        setAccounts(accountsRes.accounts);
-      } catch (error) {
-        console.error('Failed to load accounts:', error);
-      }
-    };
-    loadAccounts();
   }, []);
-
-  // 当账户切换时加载数据
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // 加载余额
-        const balanceRes = await api.balance.get(currentAccountId);
-        setBalance(balanceRes.balance);
-
-        // 加载交易记录
-        const tradesRes = await api.trades.getAll({ accountId: currentAccountId });
-        setTrades(tradesRes.trades);
-
-        // 加载出入金记录（获取所有记录用于资产走势图）
-        const fundRecordsRes = await api.fundRecords.getAll(1000, currentAccountId);
-        setFundRecords(fundRecordsRes.records);
-      } catch (error) {
-        console.error('Failed to load data:', error);
-      }
-    };
-
-    loadData();
-  }, [currentAccountId]);
-
 
   // 计算开仓金额
   useEffect(() => {
@@ -265,41 +238,43 @@ export default function TradingApp() {
   }, [balance, position]);
 
   // 账户管理函数
-  const handleCreateAccount = async () => {
+  const handleCreateAccount = useCallback(async () => {
     if (!newAccountName.trim()) {
-      alert('请输入账户名称');
+      toast.error('请输入账户名称');
       return;
     }
     try {
       const res = await api.accounts.create(newAccountName.trim());
-      setAccounts([...accounts, res.account]);
+      loadData(res.account.id);
       setNewAccountName('');
       setIsAccountDialogOpen(false);
       // 切换到新创建的账户
       setCurrentAccountId(res.account.id);
+      toast.success('账户创建成功');
     } catch (error: any) {
-      alert(error.message || '创建账户失败');
+      toast.error(error.message || '创建账户失败');
     }
-  };
+  }, [newAccountName, loadData]);
 
-  const handleUpdateAccount = async () => {
+  const handleUpdateAccount = useCallback(async () => {
     if (!editingAccount || !editAccountName.trim()) {
-      alert('请输入账户名称');
+      toast.error('请输入账户名称');
       return;
     }
     try {
       const res = await api.accounts.update(editingAccount.id, editAccountName.trim());
-      setAccounts(accounts.map(a => a.id === res.account.id ? res.account : a));
+      loadData(currentAccountId);
       setEditingAccount(null);
       setEditAccountName('');
+      toast.success('账户更新成功');
     } catch (error: any) {
-      alert(error.message || '更新账户失败');
+      toast.error(error.message || '更新账户失败');
     }
-  };
+  }, [editingAccount, editAccountName, currentAccountId, loadData]);
 
-  const handleDeleteAccount = async (id: number) => {
+  const handleDeleteAccount = useCallback(async (id: number) => {
     if (id === 1) {
-      alert('不能删除默认账户');
+      toast.error('不能删除默认账户');
       return;
     }
     if (!confirm('确定要删除此账户吗？该账户下的所有交易记录和出入金记录都会被删除。')) {
@@ -307,27 +282,37 @@ export default function TradingApp() {
     }
     try {
       await api.accounts.delete(id);
-      setAccounts(accounts.filter(a => a.id !== id));
       // 如果删除的是当前账户，切换到默认账户
       if (currentAccountId === id) {
         setCurrentAccountId(1);
+        loadData(1);
+      } else {
+        loadData(currentAccountId);
       }
+      toast.success('账户删除成功');
     } catch (error: any) {
-      alert(error.message || '删除账户失败');
+      toast.error(error.message || '删除账户失败');
     }
-  };
+  }, [currentAccountId, loadData]);
 
   const currentAccount = accounts.find(a => a.id === currentAccountId);
 
+  // 计算累计入金和出金
+  const { totalDeposit, totalWithdraw } = useMemo(() => {
+    const deposit = fundRecords.filter(r => r.type === 'deposit').reduce((sum, r) => sum + (r.amount || 0), 0);
+    const withdraw = fundRecords.filter(r => r.type === 'withdraw').reduce((sum, r) => sum + (r.amount || 0), 0);
+    return { totalDeposit: deposit, totalWithdraw: withdraw };
+  }, [fundRecords]);
+
   // 添加资金记录
-  const handleAddFund = async (type: 'deposit' | 'withdraw') => {
+  const handleAddFund = useCallback(async (type: 'deposit' | 'withdraw') => {
     const amount = Number(fundAmount);
     if (!amount || amount <= 0) return;
     if (!fundDate) return;
 
     // 出金时检查余额是否足够
     if (type === 'withdraw' && amount > balance) {
-      alert('余额不足，无法出金');
+      toast.error('余额不足，无法出金');
       return;
     }
 
@@ -347,7 +332,7 @@ export default function TradingApp() {
       setBalance(updatedBalance);
 
       // 更新出入金记录列表
-      setFundRecords([recordRes.record, ...fundRecords]);
+      setFundRecords(prev => [recordRes.record, ...prev]);
 
       // 更新资产历史
       setFundAmount('');
@@ -357,22 +342,23 @@ export default function TradingApp() {
       } else {
         setIsWithdrawDialogOpen(false);
       }
+      toast.success(type === 'deposit' ? '入金成功' : '出金成功');
     } catch (error: any) {
       console.error('Failed to add fund record:', error);
-      alert('添加出入金记录失败：' + (error?.message || '未知错误'));
+      toast.error('添加出入金记录失败：' + (error?.message || '未知错误'));
     }
-  };
+  }, [fundAmount, fundDate, balance, currentAccountId]);
 
   // 删除出入金记录
-  const handleDeleteFundRecord = async (id: string) => {
+  const handleDeleteFundRecord = useCallback(async (id: string) => {
     try {
       const record = fundRecords.find(r => r.id === id);
       if (!record) return;
 
       // 检查删除后余额是否为负数
-      const newBalance = record.type === 'deposit' ? balance - record.amount : balance + record.amount;
+      const newBalance = record.type === 'deposit' ? balance - (record.amount || 0) : balance + (record.amount || 0);
       if (record.type === 'deposit' && newBalance < 0) {
-        alert('删除此入金记录会导致余额为负数，无法删除');
+        toast.error('删除此入金记录会导致余额为负数，无法删除');
         return;
       }
 
@@ -384,24 +370,25 @@ export default function TradingApp() {
       setBalance(updatedBalance);
 
       // 删除记录
-      setFundRecords(fundRecords.filter(r => r.id !== id));
+      setFundRecords(prev => prev.filter(r => r.id !== id));
+      toast.success('记录删除成功');
     } catch (error: any) {
       console.error('Failed to delete fund record:', error);
-      alert('删除出入金记录失败：' + (error?.message || '未知错误'));
+      toast.error('删除出入金记录失败：' + (error?.message || '未知错误'));
     }
-  };
+  }, [fundRecords, balance, currentAccountId]);
 
   // 添加交易记录
-  const handleAddTrade = async () => {
+  const handleAddTrade = useCallback(async () => {
     // 验证必填字段
     if (!symbol || !openDateTime) {
-      alert('请填写交易品种和开仓日期');
+      toast.error('请填写交易品种和开仓日期');
       return;
     }
 
     // 如果已平仓，盈亏金额必填
     if (isClosed && !profitLoss) {
-      alert('已平仓时，盈亏金额为必填项');
+      toast.error('已平仓时，盈亏金额为必填项');
       return;
     }
 
@@ -410,13 +397,13 @@ export default function TradingApp() {
     if (profitLoss) {
       pl = Number(profitLoss);
       if (isNaN(pl)) {
-        alert('盈亏金额必须是有效数字');
+        toast.error('盈亏金额必须是有效数字');
         return;
       }
 
       // 检查亏损是否会导致余额为负数
       if (pl < 0 && balance + pl < 0) {
-        alert('余额不足，无法添加此亏损交易');
+        toast.error('余额不足，无法添加此亏损交易');
         return;
       }
     }
@@ -487,7 +474,7 @@ export default function TradingApp() {
       setBalance(updatedBalance);
 
       // 添加交易记录
-      setTrades([tradeRes.trade, ...trades]);
+      setTrades(prev => [tradeRes.trade, ...prev]);
 
       // 重置表单
       setSymbol('');
@@ -503,18 +490,15 @@ export default function TradingApp() {
       setOpenDateTime(new Date().toISOString().slice(0, 16));
       setIsClosed(true);
       setIsTradeDialogOpen(false);
+      toast.success('交易记录添加成功');
     } catch (error: any) {
       console.error('Failed to add trade:', error);
-      alert('添加交易记录失败：' + (error?.message || '未知错误'));
+      toast.error('添加交易记录失败：' + (error?.message || '未知错误'));
     }
-  };
-
-  // 计算累计入金和出金
-  const totalDeposit = fundRecords.filter(r => r.type === 'deposit').reduce((sum, r) => sum + r.amount, 0);
-  const totalWithdraw = fundRecords.filter(r => r.type === 'withdraw').reduce((sum, r) => sum + r.amount, 0);
+  }, [symbol, openDateTime, isClosed, profitLoss, balance, currentAccountId, tradeLevel.level, volumeTrend, bollContraction, bollWidth, pattern, position, openAmount, closeReason, remark]);
 
   // 数据下载功能
-  const handleDownloadData = () => {
+  const handleDownloadData = useCallback(() => {
     const data = {
       balance,
       totalDeposit,
@@ -541,10 +525,10 @@ export default function TradingApp() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, [balance, totalDeposit, totalWithdraw, trades]);
 
   // 删除交易记录
-  const handleDeleteTrade = async (tradeId: string) => {
+  const handleDeleteTrade = useCallback(async (tradeId: string) => {
     if (!confirm('确定要删除这条交易记录吗？')) return;
 
     try {
@@ -552,9 +536,9 @@ export default function TradingApp() {
       if (!tradeToDelete) return;
 
       // 检查删除盈利交易后余额是否为负数
-      const newBalance = balance - tradeToDelete.profitLoss;
+      const newBalance = balance - (tradeToDelete.profitLoss || 0);
       if (tradeToDelete.profitLoss > 0 && newBalance < 0) {
-        alert('删除此盈利交易会导致余额为负数，无法删除');
+        toast.error('删除此盈利交易会导致余额为负数，无法删除');
         return;
       }
 
@@ -566,15 +550,16 @@ export default function TradingApp() {
       setBalance(updatedBalance);
 
       // 删除记录
-      setTrades(trades.filter(t => t.id !== tradeId));
+      setTrades(prev => prev.filter(t => t.id !== tradeId));
+      toast.success('交易记录删除成功');
     } catch (error: any) {
       console.error('Failed to delete trade:', error);
-      alert('删除交易记录失败：' + (error?.message || '未知错误'));
+      toast.error('删除交易记录失败：' + (error?.message || '未知错误'));
     }
-  };
+  }, [trades, balance, currentAccountId]);
 
   // 编辑交易记录
-  const handleEditTrade = (trade: Trade) => {
+  const handleEditTrade = useCallback((trade: any) => {
     setEditingTrade(trade);
     setSymbol(trade.symbol);
     setStrategy(trade.strategy);
@@ -582,10 +567,10 @@ export default function TradingApp() {
     setOpenDateTime(combineDateTime(trade.date, trade.openTime));
     setCloseReason(trade.closeReason);
     setRemark(trade.remark || '');
-    setProfitLoss(String(trade.profitLoss));
+    setProfitLoss(String(trade.profitLoss || 0));
     setIsClosed(trade.isClosed);
     setIsEditDialogOpen(true);
-  };
+  }, []);
 
   // 将 date 和 openTime 合并为 datetime-local 格式
   const combineDateTime = (date: string, time: string) => {
@@ -593,17 +578,17 @@ export default function TradingApp() {
   };
 
   // 保存编辑
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (!editingTrade || !symbol || !openDateTime) return;
 
     // 如果已平仓，盈亏金额必填
     if (isClosed && !profitLoss) {
-      alert('已平仓时，盈亏金额为必填项');
+      toast.error('已平仓时，盈亏金额为必填项');
       return;
     }
 
     try {
-      const oldProfitLoss = editingTrade.profitLoss;
+      const oldProfitLoss = editingTrade.profitLoss || 0;
 
       // 计算新盈亏（如果填写了）
       let newProfitLoss = oldProfitLoss;
@@ -615,7 +600,7 @@ export default function TradingApp() {
         // 检查编辑后余额是否为负数
         newBalance = balance - oldProfitLoss + newProfitLoss;
         if (newBalance < 0) {
-          alert('修改后的盈亏会导致余额为负数，无法保存');
+          toast.error('修改后的盈亏会导致余额为负数，无法保存');
           return;
         }
       }
@@ -647,16 +632,17 @@ export default function TradingApp() {
       setBalance(updatedBalance);
 
       // 更新交易列表
-      setTrades(trades.map(t => t.id === editingTrade.id ? updatedTradeRes.trade : t));
+      setTrades(prev => prev.map(t => t.id === editingTrade.id ? updatedTradeRes.trade : t));
 
       // 关闭对话框
       setIsEditDialogOpen(false);
       setEditingTrade(null);
+      toast.success('交易记录更新成功');
     } catch (error: any) {
       console.error('Failed to save trade:', error);
-      alert('保存交易记录失败：' + (error?.message || '未知错误'));
+      toast.error('保存交易记录失败：' + (error?.message || '未知错误'));
     }
-  };
+  }, [editingTrade, symbol, openDateTime, isClosed, profitLoss, balance, currentAccountId, closeReason, remark, position, strategy]);
 
   // 平仓原因显示
   const getCloseReasonText = (reason: string, remark?: string) => {
@@ -679,7 +665,7 @@ export default function TradingApp() {
   };
 
   // 根据日期范围过滤交易
-  const getFilteredTrades = () => {
+  const getFilteredTrades = useCallback(() => {
     if (!filterStartDate && !filterEndDate) return trades;
     
     return trades.filter(trade => {
@@ -698,7 +684,7 @@ export default function TradingApp() {
       }
       return true;
     });
-  };
+  }, [trades, filterStartDate, filterEndDate]);
 
   const filteredTrades = getFilteredTrades();
 
@@ -840,7 +826,7 @@ export default function TradingApp() {
           </CardHeader>
           <CardContent className="pt-4 sm:pt-6">
             <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="text-3xl sm:text-4xl font-bold text-amber-400">${balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="text-3xl sm:text-4xl font-bold text-amber-400">${(balance || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
               <div className="flex gap-2">
                 <Dialog open={isDepositDialogOpen} onOpenChange={setIsDepositDialogOpen}>
                   <DialogTrigger asChild>
@@ -925,11 +911,11 @@ export default function TradingApp() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded border border-green-500/30 bg-green-500/10 p-2 text-center">
                   <div className="text-xs text-green-400/70">累计入金</div>
-                  <div className="text-sm font-semibold text-green-400">${totalDeposit.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div className="text-sm font-semibold text-green-400">${(totalDeposit || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
                 <div className="rounded border border-red-500/30 bg-red-500/10 p-2 text-center">
                   <div className="text-xs text-red-400/70">累计出金</div>
-                  <div className="text-sm font-semibold text-red-400">${totalWithdraw.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div className="text-sm font-semibold text-red-400">${(totalWithdraw || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
               </div>
               
@@ -945,7 +931,7 @@ export default function TradingApp() {
                             {record.type === 'deposit' ? '入金' : '出金'}
                           </span>
                           <span className="text-xs text-white">
-                            ${record.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${(record.amount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                           <span className="text-xs text-gray-400">
                             {record.date}
@@ -1042,14 +1028,14 @@ export default function TradingApp() {
                   // 计算统计数据
                   const totalDeposit = fundRecords
                     .filter(r => r.type === 'deposit')
-                    .reduce((sum, r) => sum + r.amount, 0);
+                    .reduce((sum, r) => sum + (r.amount || 0), 0);
                   const totalWithdraw = fundRecords
                     .filter(r => r.type === 'withdraw')
-                    .reduce((sum, r) => sum + r.amount, 0);
-                  const totalProfitLoss = trades.reduce((sum, t) => sum + t.profitLoss, 0);
-                  const returnRate = totalDeposit > 0 
-                    ? (totalProfitLoss / totalDeposit * 100).toFixed(2)
-                    : '0.00';
+                    .reduce((sum, r) => sum + (r.amount || 0), 0);
+                  const totalProfitLoss = trades.reduce((sum, t) => sum + (t.profitLoss || 0), 0);
+                  const returnRate = (totalDeposit || 0) > 0 
+      ? (totalProfitLoss / totalDeposit * 100).toFixed(2)
+      : '0.00';
                   
                   return (
                     <>
@@ -1058,21 +1044,21 @@ export default function TradingApp() {
                         <div className="rounded-lg border border-amber-500/20 bg-gray-800/60 p-3 text-center">
                           <div className="text-xs text-gray-400 mb-1">当前余额</div>
                           <div className="text-lg font-semibold text-amber-400">
-                            ${balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-                          </div>
+                          ${(balance || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                        </div>
                         </div>
                         <div className="rounded-lg border border-blue-500/20 bg-gray-800/60 p-3 text-center">
                           <div className="text-xs text-gray-400 mb-1">入金 / 出金</div>
                           <div className="text-base font-semibold">
-                            <span className="text-green-400">${totalDeposit.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}</span>
+                            <span className="text-green-400">${(totalDeposit || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0 })}</span>
                             <span className="text-gray-500 mx-1">/</span>
-                            <span className="text-red-400">${totalWithdraw.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}</span>
+                            <span className="text-red-400">${(totalWithdraw || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0 })}</span>
                           </div>
                         </div>
                         <div className="rounded-lg border border-purple-500/20 bg-gray-800/60 p-3 text-center">
                           <div className="text-xs text-gray-400 mb-1">累计盈利</div>
-                          <div className={`text-lg font-semibold ${totalProfitLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {totalProfitLoss >= 0 ? '+' : ''}{totalProfitLoss.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                          <div className={`text-lg font-semibold ${(totalProfitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {(totalProfitLoss || 0) >= 0 ? '+' : ''}{(totalProfitLoss || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                           </div>
                         </div>
                         <div className="rounded-lg border border-cyan-500/20 bg-gray-800/60 p-3 text-center">
