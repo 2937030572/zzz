@@ -62,7 +62,7 @@ export const TradingStats: React.FC<TradingStatsProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
               <div className="text-2xl font-bold text-green-400">
-                ${totalProfit.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${(totalProfit || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-sm text-green-400/70">盈利金额</div>
             </div>
@@ -81,7 +81,7 @@ export const TradingStats: React.FC<TradingStatsProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
               <div className="text-2xl font-bold text-red-400">
-                ${totalLoss.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${(totalLoss || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-sm text-red-400/70">亏损金额</div>
             </div>
@@ -97,9 +97,9 @@ export const TradingStats: React.FC<TradingStatsProps> = ({
         {/* 总体统计 */}
         <div className="grid grid-cols-3 gap-4">
           <div className="rounded-lg border border-cyan-500/30 bg-gray-800/50 p-4 text-center backdrop-blur-sm">
-            <div className={`text-2xl font-bold ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {totalPnL >= 0 ? '+' : ''}
-              ${totalPnL.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div className={`text-2xl font-bold ${(totalPnL || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(totalPnL || 0) >= 0 ? '+' : ''}
+              ${(totalPnL || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-sm text-cyan-500/60">总盈亏</div>
           </div>
