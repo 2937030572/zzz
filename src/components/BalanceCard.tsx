@@ -44,7 +44,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
       <CardContent className="pt-6">
         <div className="mb-4 flex items-center justify-between">
           <div className="text-4xl font-bold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">
-            ${balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${(balance || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="flex gap-2">
             <Dialog open={isDepositDialogOpen} onOpenChange={setIsDepositDialogOpen}>
@@ -120,13 +120,13 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
             <div className="rounded border border-green-500/30 bg-green-500/10 p-2 text-center">
               <div className="text-xs text-green-400/70">累计入金</div>
               <div className="text-sm font-semibold text-green-400">
-                ${totalDeposit.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${(totalDeposit || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
             <div className="rounded border border-red-500/30 bg-red-500/10 p-2 text-center">
               <div className="text-xs text-red-400/70">累计出金</div>
               <div className="text-sm font-semibold text-red-400">
-                ${totalWithdraw.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${(totalWithdraw || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>
@@ -143,7 +143,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
                         {record.type === 'deposit' ? '入金' : '出金'}
                       </span>
                       <span className="text-xs text-white">
-                        ${record.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${(record.amount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <span className="text-xs text-gray-400">
                         {record.date}

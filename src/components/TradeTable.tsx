@@ -67,13 +67,13 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades, onEditTrade, onD
                     <TableCell className="text-white">{trade.strategy}</TableCell>
                     <TableCell className="text-cyan-300">{trade.position}%</TableCell>
                     <TableCell className="font-semibold text-cyan-400">
-                      ${trade.openAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${(trade.openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell className="text-gray-400">{trade.date} {trade.openTime}</TableCell>
                     <TableCell className="text-white">{getCloseReasonComponent(trade.closeReason, trade.remark)}</TableCell>
-                    <TableCell className={`font-semibold ${trade.profitLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {trade.profitLoss >= 0 ? '+' : ''}
-                      ${trade.profitLoss.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <TableCell className={`font-semibold ${(trade.profitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {(trade.profitLoss || 0) >= 0 ? '+' : ''}
+                      ${(trade.profitLoss || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell>
                       {trade.isClosed ? (
