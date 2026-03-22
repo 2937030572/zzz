@@ -565,7 +565,7 @@ export default function TradingApp() {
                   <div className="space-y-2">
                     <Label className="text-cyan-400">开仓金额</Label>
                     <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-lg font-semibold text-cyan-400">
-                      ${openAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${(openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <p className="text-sm text-cyan-500/60">开仓金额 = 仓位 × 资产余额</p>
                   </div>
@@ -687,7 +687,7 @@ export default function TradingApp() {
                   <div className="space-y-2">
                     <Label className="text-cyan-400">开仓金额</Label>
                     <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-lg font-semibold text-cyan-400">
-                      ${openAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${(openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
 
