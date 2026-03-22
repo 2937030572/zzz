@@ -331,7 +331,7 @@ export default function TradingApp() {
     setEditingTrade(trade);
     setSymbol(trade.symbol);
     setStrategy(trade.strategy);
-    setPosition(trade.position);
+    setPosition(trade.position as PositionType);
     setOpenDateTime(combineDateTime(trade.date, trade.openTime));
     setCloseReason(trade.closeReason);
     setRemark(trade.remark || '');
