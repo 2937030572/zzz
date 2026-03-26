@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -9,16 +9,10 @@ import { Trash2 } from 'lucide-react';
 interface BalanceCardProps {
   balance: number;
   fundRecords: any[];
-  onAddFund: (type: 'deposit' | 'withdraw', amount: number) => void;
-  onDeleteFundRecord: (id: string) => void;
+  onAddFund: (type: 'deposit' | 'withdraw', amount: number) => Promise<void>;
+  onDeleteFundRecord: (id: string) => Promise<void>;
   totalDeposit: number;
   totalWithdraw: number;
-  fundAmount: string;
-  setFundAmount: (value: string) => void;
-  isDepositDialogOpen: boolean;
-  setIsDepositDialogOpen: (open: boolean) => void;
-  isWithdrawDialogOpen: boolean;
-  setIsWithdrawDialogOpen: (open: boolean) => void;
 }
 
 export const BalanceCard: React.FC<BalanceCardProps> = ({
@@ -28,13 +22,23 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
   onDeleteFundRecord,
   totalDeposit,
   totalWithdraw,
-  fundAmount,
-  setFundAmount,
-  isDepositDialogOpen,
-  setIsDepositDialogOpen,
-  isWithdrawDialogOpen,
-  setIsWithdrawDialogOpen
 }) => {
+  const [fundAmount, setFundAmount] = useState('');
+  const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false);
+  const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
+
+  const handleDeposit = async () => {
+    await onAddFund('deposit', Number(fundAmount));
+    setFundAmount('');
+    setIsDepositDialogOpen(false);
+  };
+
+  const handleWithdraw = async () => {
+    await onAddFund('withdraw', Number(fundAmount));
+    setFundAmount('');
+    setIsWithdrawDialogOpen(false);
+  };
+
   return (
     <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
       <CardHeader className="border-b border-cyan-500/20">
@@ -47,65 +51,64 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
             ${(balance || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="flex gap-2">
-            <Dialog open={isDepositDialogOpen} onOpenChange={setIsDepositDialogOpen}>
+            {/* 入金 */}
+            <Dialog open={isDepositDialogOpen} onOpenChange={(open) => { setIsDepositDialogOpen(open); if (!open) setFundAmount(''); }}>
               <DialogTrigger asChild>
                 <Button className="bg-blue-600 hover:bg-blue-700">入金</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="border-cyan-500/30 bg-gray-900 text-white">
                 <DialogHeader>
-                  <DialogTitle>入金</DialogTitle>
-                  <DialogDescription>请输入入金金额</DialogDescription>
+                  <DialogTitle className="text-cyan-400">入金</DialogTitle>
+                  <DialogDescription className="text-cyan-500/60">请输入入金金额</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="deposit-amount">金额</Label>
+                    <Label htmlFor="deposit-amount" className="text-cyan-400">金额</Label>
                     <Input
                       id="deposit-amount"
                       type="number"
                       placeholder="请输入金额"
                       value={fundAmount}
                       onChange={(e) => setFundAmount(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleDeposit()}
+                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
                     />
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button 
-                    className="bg-blue-600 hover:bg-blue-700" 
-                    onClick={() => onAddFund('deposit', Number(fundAmount))}
-                  >
+                  <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleDeposit}>
                     确认入金
                   </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
 
-            <Dialog open={isWithdrawDialogOpen} onOpenChange={setIsWithdrawDialogOpen}>
+            {/* 出金 */}
+            <Dialog open={isWithdrawDialogOpen} onOpenChange={(open) => { setIsWithdrawDialogOpen(open); if (!open) setFundAmount(''); }}>
               <DialogTrigger asChild>
                 <Button variant="destructive" className="bg-red-600 hover:bg-red-700">出金</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="border-red-500/30 bg-gray-900 text-white">
                 <DialogHeader>
-                  <DialogTitle>出金</DialogTitle>
-                  <DialogDescription>请输入出金金额</DialogDescription>
+                  <DialogTitle className="text-red-400">出金</DialogTitle>
+                  <DialogDescription className="text-red-500/60">请输入出金金额</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="withdraw-amount">金额</Label>
+                    <Label htmlFor="withdraw-amount" className="text-red-400">金额</Label>
                     <Input
                       id="withdraw-amount"
                       type="number"
                       placeholder="请输入金额"
                       value={fundAmount}
                       onChange={(e) => setFundAmount(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleWithdraw()}
+                      className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500"
                     />
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button 
-                    variant="destructive" 
-                    className="bg-red-600 hover:bg-red-700" 
-                    onClick={() => onAddFund('withdraw', Number(fundAmount))}
-                  >
+                  <Button variant="destructive" className="bg-red-600 hover:bg-red-700" onClick={handleWithdraw}>
                     确认出金
                   </Button>
                 </DialogFooter>
@@ -113,7 +116,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
             </Dialog>
           </div>
         </div>
-        
+
         {/* 累计入金和出金 */}
         <div className="mt-4 space-y-2">
           <div className="grid grid-cols-2 gap-2">
@@ -130,7 +133,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
               </div>
             </div>
           </div>
-          
+
           {/* 最近3条出入金记录 */}
           {fundRecords.length > 0 && (
             <div className="rounded border border-cyan-500/30 bg-cyan-500/5 p-2">
