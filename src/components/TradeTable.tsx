@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Trade } from '@/types';
+import { getCloseReasonText } from '@/lib/utils';
 
 interface TradeTableProps {
   trades: Trade[];
@@ -11,15 +12,7 @@ interface TradeTableProps {
 }
 
 export const TradeTable: React.FC<TradeTableProps> = ({ trades, onEditTrade, onDeleteTrade }) => {
-  // 平仓原因显示
-  const getCloseReasonText = (reason: string, remark?: string) => {
-    if (reason === 'profit') return '正常止盈';
-    if (reason === 'loss') return '正常止损';
-    if (reason === 'other') return `其他原因 (${remark || '无备注'})`;
-    return reason;
-  };
-
-  // 获取带高亮的平仓原因组件
+  // 获取带高亮的平仓原因组件（remark 高亮显示）
   const getCloseReasonComponent = (reason: string, remark?: string) => {
     if (reason === 'other' && remark) {
       return (

@@ -1,25 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
+
+interface Account {
+  id: number;
+  name: string;
+}
 
 interface AccountManagerProps {
-  accounts: any[];
+  accounts: Account[];
   currentAccountId: number;
   setCurrentAccountId: (id: number) => void;
   onCreateAccount: (name: string) => Promise<void>;
-  onUpdateAccount: (account: any, name: string) => Promise<void>;
+  onUpdateAccount: (account: Account, name: string) => Promise<void>;
   onDeleteAccount: (id: number) => Promise<void>;
-  editingAccount: any | null;
-  setEditingAccount: (account: any | null) => void;
-  editAccountName: string;
-  setEditAccountName: (name: string) => void;
-  newAccountName: string;
-  setNewAccountName: (name: string) => void;
-  isAccountDialogOpen: boolean;
-  setIsAccountDialogOpen: (open: boolean) => void;
 }
 
 export const AccountManager: React.FC<AccountManagerProps> = ({
@@ -29,19 +25,37 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
   onCreateAccount,
   onUpdateAccount,
   onDeleteAccount,
-  editingAccount,
-  setEditingAccount,
-  editAccountName,
-  setEditAccountName,
-  newAccountName,
-  setNewAccountName,
-  isAccountDialogOpen,
-  setIsAccountDialogOpen
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editAccountName, setEditAccountName] = useState('');
+  const [newAccountName, setNewAccountName] = useState('');
+
+  const handleCreate = async () => {
+    await onCreateAccount(newAccountName);
+    setNewAccountName('');
+  };
+
+  const handleUpdate = async (account: Account) => {
+    await onUpdateAccount(account, editAccountName);
+    setEditingAccount(null);
+    setEditAccountName('');
+  };
+
+  const startEdit = (account: Account) => {
+    setEditingAccount(account);
+    setEditAccountName(account.name);
+  };
+
+  const cancelEdit = () => {
+    setEditingAccount(null);
+    setEditAccountName('');
+  };
+
   return (
     <div className="flex items-center gap-2">
       {/* 账户选择 */}
-      <Select value={String(currentAccountId)} onValueChange={(value) => setCurrentAccountId(Number(value))}>
+      <Select value={String(currentAccountId)} onValueChange={(v) => setCurrentAccountId(Number(v))}>
         <SelectTrigger className="w-32 border-amber-500/30 bg-gray-800 text-white text-sm">
           <SelectValue />
         </SelectTrigger>
@@ -53,8 +67,9 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
           ))}
         </SelectContent>
       </Select>
+
       {/* 账户管理按钮 */}
-      <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button variant="outline" size="sm" className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300 h-8 px-2">
             管理
@@ -73,12 +88,13 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
                 value={newAccountName}
                 onChange={(e) => setNewAccountName(e.target.value)}
                 className="border-purple-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-purple-500"
-                onKeyDown={(e) => e.key === 'Enter' && onCreateAccount(newAccountName)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               />
-              <Button onClick={() => onCreateAccount(newAccountName)} className="bg-purple-500 hover:bg-purple-600 text-white font-semibold">
+              <Button onClick={handleCreate} className="bg-purple-500 hover:bg-purple-600 text-white font-semibold">
                 添加
               </Button>
             </div>
+
             {/* 账户列表 */}
             <div className="space-y-2 max-h-[300px] overflow-y-auto">
               {accounts.map((account) => (
@@ -91,17 +107,14 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
                         className="border-purple-500/30 bg-gray-700 text-white h-8 text-sm"
                         autoFocus
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') onUpdateAccount(account, editAccountName);
-                          if (e.key === 'Escape') {
-                            setEditingAccount(null);
-                            setEditAccountName('');
-                          }
+                          if (e.key === 'Enter') handleUpdate(account);
+                          if (e.key === 'Escape') cancelEdit();
                         }}
                       />
-                      <Button size="sm" onClick={() => onUpdateAccount(account, editAccountName)} className="bg-emerald-600 hover:bg-emerald-700 h-8 px-2 text-xs">
+                      <Button size="sm" onClick={() => handleUpdate(account)} className="bg-emerald-600 hover:bg-emerald-700 h-8 px-2 text-xs">
                         保存
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setEditingAccount(null); setEditAccountName(''); }} className="h-8 px-2 text-xs text-gray-400">
+                      <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-8 px-2 text-xs text-gray-400">
                         取消
                       </Button>
                     </div>
@@ -115,22 +128,19 @@ export const AccountManager: React.FC<AccountManagerProps> = ({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 w-7 p-0 text-purple-400 hover:bg-purple-500/10"
-                          onClick={() => {
-                            setEditingAccount(account);
-                            setEditAccountName(account.name);
-                          }}
+                          className="h-7 px-2 text-xs text-purple-400 hover:bg-purple-500/10"
+                          onClick={() => startEdit(account)}
                         >
-                          ✏️
+                          编辑
                         </Button>
                         {account.id !== 1 && (
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 w-7 p-0 text-red-400 hover:bg-red-500/10"
+                            className="h-7 px-2 text-xs text-red-400 hover:bg-red-500/10"
                             onClick={() => onDeleteAccount(account.id)}
                           >
-                            🗑️
+                            删除
                           </Button>
                         )}
                       </div>

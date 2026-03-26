@@ -159,8 +159,9 @@ export const api = {
 
   // Equity History APIs
   equityHistory: {
-    getAll: async () => {
-      const res = await fetch(`${API_BASE}/equity-history`);
+    getAll: async (accountId?: number) => {
+      const query = accountId ? `?accountId=${accountId}` : '';
+      const res = await fetch(`${API_BASE}/equity-history${query}`);
       if (!res.ok) throw new Error('Failed to fetch equity history');
       return res.json();
     },
@@ -173,8 +174,9 @@ export const api = {
       if (!res.ok) throw new Error('Failed to create equity history');
       return res.json();
     },
-    clear: async () => {
-      const res = await fetch(`${API_BASE}/equity-history`, {
+    clear: async (accountId?: number) => {
+      const query = accountId ? `?accountId=${accountId}` : '';
+      const res = await fetch(`${API_BASE}/equity-history${query}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to clear equity history');

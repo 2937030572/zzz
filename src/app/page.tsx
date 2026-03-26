@@ -18,44 +18,54 @@ import { TradingStats } from '@/components/TradingStats';
 import { TradeTable } from '@/components/TradeTable';
 import { Trade, PositionType } from '@/types';
 import { AccountManager } from '@/components/AccountManager';
+import { getCloseReasonText } from '@/lib/utils';
 
 // 仓位选项：5% 到 50%，每个增加 5%
 const POSITION_OPTIONS = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
 
+// 交易表单的默认值，用于 reset
+const DEFAULT_TRADE_FORM = {
+  symbol: '',
+  strategy: '',
+  position: 5 as PositionType,
+  openDateTime: new Date().toISOString().slice(0, 16),
+  closeReason: 'profit' as 'profit' | 'loss' | 'other',
+  remark: '',
+  profitLoss: '',
+  isClosed: true,
+};
+
 export default function TradingApp() {
   // 使用交易数据钩子
-  const { 
-    accounts, 
-    currentAccountId, 
-    setCurrentAccountId, 
-    balance, 
-    trades, 
-    fundRecords, 
-    loading, 
-    error, 
-    loadData 
+  const {
+    accounts,
+    currentAccountId,
+    setCurrentAccountId,
+    balance,
+    trades,
+    fundRecords,
+    loading,
+    error,
+    loadData
   } = useTradingData();
 
   // 资产历史状态
   const [equityHistory, setEquityHistory] = useState<Array<{ date: string; value: number }>>([]);
 
-  // 添加交易对话框状态
+  // 交易对话框状态
   const [isTradeDialogOpen, setIsTradeDialogOpen] = useState(false);
-  const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false);
-  const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
-  const [fundAmount, setFundAmount] = useState<string>('');
 
   // 交易表单状态
-  const [symbol, setSymbol] = useState<string>('');
-  const [strategy, setStrategy] = useState<string>('');
-  const [position, setPosition] = useState<PositionType>(5);
+  const [symbol, setSymbol] = useState(DEFAULT_TRADE_FORM.symbol);
+  const [strategy, setStrategy] = useState(DEFAULT_TRADE_FORM.strategy);
+  const [position, setPosition] = useState<PositionType>(DEFAULT_TRADE_FORM.position);
   const [openAmount, setOpenAmount] = useState<number>(0);
-  const [openDateTime, setOpenDateTime] = useState<string>(new Date().toISOString().slice(0, 16));
-  const [closeReason, setCloseReason] = useState<'profit' | 'loss' | 'other'>('profit');
-  const [remark, setRemark] = useState<string>('');
-  const [profitLoss, setProfitLoss] = useState<string>('');
-  const [isClosed, setIsClosed] = useState<boolean>(true);
-  
+  const [openDateTime, setOpenDateTime] = useState(DEFAULT_TRADE_FORM.openDateTime);
+  const [closeReason, setCloseReason] = useState(DEFAULT_TRADE_FORM.closeReason);
+  const [remark, setRemark] = useState(DEFAULT_TRADE_FORM.remark);
+  const [profitLoss, setProfitLoss] = useState(DEFAULT_TRADE_FORM.profitLoss);
+  const [isClosed, setIsClosed] = useState(DEFAULT_TRADE_FORM.isClosed);
+
   // 日期筛选状态
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
@@ -64,76 +74,54 @@ export default function TradingApp() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // 账户管理状态
-  const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<any | null>(null);
-  const [editAccountName, setEditAccountName] = useState('');
-  const [newAccountName, setNewAccountName] = useState('');
-
-  // 账户操作
-  const handleCreateAccount = useCallback(async (name: string) => {
-    if (!name.trim()) return;
-    try {
-      await api.accounts.create(name.trim());
-      setNewAccountName('');
-      await loadData(currentAccountId);
-      toast.success('创建账户成功');
-    } catch (error: any) {
-      toast.error(error.message || '创建账户失败');
-    }
-  }, [currentAccountId, loadData]);
-
-  const handleUpdateAccount = useCallback(async (account: any, name: string) => {
-    if (!name.trim()) return;
-    try {
-      await api.accounts.update(account.id, name.trim());
-      setEditingAccount(null);
-      setEditAccountName('');
-      await loadData(currentAccountId);
-      toast.success('更新账户成功');
-    } catch (error: any) {
-      toast.error(error.message || '更新账户失败');
-    }
-  }, [currentAccountId, loadData]);
-
-  const handleDeleteAccount = useCallback(async (id: number) => {
-    if (!confirm('确定要删除该账户及其所有数据吗？此操作不可撤销！')) return;
-    try {
-      await api.accounts.delete(id);
-      if (currentAccountId === id) setCurrentAccountId(1);
-      await loadData(1);
-      toast.success('删除账户成功');
-    } catch (error: any) {
-      toast.error(error.message || '删除账户失败');
-    }
-  }, [currentAccountId, loadData, setCurrentAccountId]);
+  // 重置表单到默认值
+  const resetTradeForm = useCallback(() => {
+    setSymbol(DEFAULT_TRADE_FORM.symbol);
+    setStrategy(DEFAULT_TRADE_FORM.strategy);
+    setPosition(DEFAULT_TRADE_FORM.position);
+    setOpenDateTime(new Date().toISOString().slice(0, 16));
+    setCloseReason(DEFAULT_TRADE_FORM.closeReason);
+    setRemark(DEFAULT_TRADE_FORM.remark);
+    setProfitLoss(DEFAULT_TRADE_FORM.profitLoss);
+    setIsClosed(DEFAULT_TRADE_FORM.isClosed);
+  }, []);
 
   // 加载资产历史（随账户切换刷新）
-  useEffect(() => {
-    const loadEquityHistory = async () => {
-      try {
-        const equityHistoryRes = await api.equityHistory.getAll();
-        setEquityHistory(equityHistoryRes.history || []);
-      } catch (error) {
-        console.error('Failed to load equity history:', error);
-      }
-    };
+  const loadEquityHistory = useCallback(async (accountId: number) => {
+    try {
+      const res = await api.equityHistory.getAll(accountId);
+      setEquityHistory(res.history || []);
+    } catch (err) {
+      console.error('Failed to load equity history:', err);
+    }
+  }, []);
 
-    loadEquityHistory();
-  }, [currentAccountId]);
+  useEffect(() => {
+    loadEquityHistory(currentAccountId);
+  }, [currentAccountId, loadEquityHistory]);
 
   // 计算开仓金额
   useEffect(() => {
-    const amount = (balance * position) / 100;
-    setOpenAmount(amount);
+    setOpenAmount((balance * position) / 100);
   }, [balance, position]);
+
+  // 获取操作后的最新余额（避免 stale state 写入快照）
+  const fetchLatestBalance = useCallback(async (accountId: number): Promise<number> => {
+    const res = await api.balance.get(accountId);
+    return res.balance ?? 0;
+  }, []);
 
   // 添加资金记录
   const handleAddFund = useCallback(async (type: 'deposit' | 'withdraw', amount: number) => {
     if (!amount || amount <= 0) return;
 
+    // 出金前端余额校验
+    if (type === 'withdraw' && amount > balance) {
+      toast.error(`出金金额 $${amount} 超过余额 $${balance.toFixed(2)}`);
+      return;
+    }
+
     try {
-      // 创建出入金记录（后端会自动更新余额）
       await api.fundRecords.create({
         type,
         amount,
@@ -141,55 +129,48 @@ export default function TradingApp() {
         accountId: currentAccountId,
       });
 
-      // 更新资产历史
-      const newBalance = type === 'deposit' ? balance + amount : balance - amount;
-      await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
-      });
-
-      // 重新加载数据以同步最新状态
+      // 重新加载数据以获取最新余额
       await loadData(currentAccountId);
 
-      setFundAmount('');
-      if (type === 'deposit') {
-        setIsDepositDialogOpen(false);
-      } else {
-        setIsWithdrawDialogOpen(false);
-      }
+      // 用最新余额写入净值快照
+      const latestBalance = await fetchLatestBalance(currentAccountId);
+      await api.equityHistory.create({
+        date: new Date().toISOString(),
+        value: latestBalance,
+        accountId: currentAccountId,
+      });
+
+      await loadEquityHistory(currentAccountId);
 
       toast.success(type === 'deposit' ? '入金成功' : '出金成功');
-    } catch (error) {
-      console.error('Failed to add fund record:', error);
+    } catch (err) {
+      console.error('Failed to add fund record:', err);
       toast.error(type === 'deposit' ? '添加入金记录失败' : '添加出金记录失败');
     }
-  }, [balance, currentAccountId, loadData]);
+  }, [balance, currentAccountId, loadData, fetchLatestBalance, loadEquityHistory]);
 
   // 删除出入金记录
   const handleDeleteFundRecord = useCallback(async (id: string) => {
     try {
-      const record = fundRecords.find(r => r.id === id);
-      if (!record) return;
-
-      // 删除记录（后端会自动还原余额）
       await api.fundRecords.delete(id, currentAccountId);
 
-      // 更新资产历史
-      const newBalance = record.type === 'deposit' ? balance - record.amount : balance + record.amount;
-      await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
-      });
-
-      // 重新加载数据
       await loadData(currentAccountId);
 
+      const latestBalance = await fetchLatestBalance(currentAccountId);
+      await api.equityHistory.create({
+        date: new Date().toISOString(),
+        value: latestBalance,
+        accountId: currentAccountId,
+      });
+
+      await loadEquityHistory(currentAccountId);
+
       toast.success('删除出入金记录成功');
-    } catch (error) {
-      console.error('Failed to delete fund record:', error);
+    } catch (err) {
+      console.error('Failed to delete fund record:', err);
       toast.error('删除出入金记录失败');
     }
-  }, [balance, fundRecords, currentAccountId, loadData]);
+  }, [currentAccountId, loadData, fetchLatestBalance, loadEquityHistory]);
 
   // 添加交易记录
   const handleAddTrade = useCallback(async () => {
@@ -197,13 +178,10 @@ export default function TradingApp() {
 
     try {
       const pl = Number(profitLoss);
-
-      // 将 openDateTime 拆分为 date 和 openTime
       const dateTime = new Date(openDateTime);
       const date = dateTime.toISOString().split('T')[0];
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
-      // 创建交易记录（后端会自动更新余额）
       await api.trades.create({
         symbol,
         strategy,
@@ -213,72 +191,42 @@ export default function TradingApp() {
         closeReason,
         remark: closeReason === 'other' ? remark : undefined,
         profitLoss: pl,
-        date: date,
+        date,
         isClosed,
         accountId: currentAccountId,
       });
 
-      // 更新资产历史
-      const newBalance = balance + pl;
-      await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
-      });
-
-      // 重新加载数据
       await loadData(currentAccountId);
 
-      // 重置表单
-      setSymbol('');
-      setStrategy('');
-      setPosition(5);
-      setCloseReason('profit');
-      setRemark('');
-      setProfitLoss('');
-      setOpenDateTime(new Date().toISOString().slice(0, 16));
-      setIsClosed(true);
+      const latestBalance = await fetchLatestBalance(currentAccountId);
+      await api.equityHistory.create({
+        date: new Date().toISOString(),
+        value: latestBalance,
+        accountId: currentAccountId,
+      });
+
+      await loadEquityHistory(currentAccountId);
+
+      resetTradeForm();
       setIsTradeDialogOpen(false);
 
       toast.success('添加交易记录成功');
-    } catch (error) {
-      console.error('Failed to add trade:', error);
+    } catch (err) {
+      console.error('Failed to add trade:', err);
       toast.error('添加交易记录失败');
     }
-  }, [symbol, profitLoss, openDateTime, strategy, position, openAmount, closeReason, remark, isClosed, balance, currentAccountId, loadData]);
+  }, [symbol, profitLoss, openDateTime, strategy, position, openAmount, closeReason, remark, isClosed, currentAccountId, loadData, fetchLatestBalance, loadEquityHistory, resetTradeForm]);
 
-  // 计算累计入金和出金
-  const totalDeposit = useMemo(() => {
-    return fundRecords.filter(r => r.type === 'deposit').reduce((sum, r) => sum + r.amount, 0);
-  }, [fundRecords]);
-  
-  const totalWithdraw = useMemo(() => {
-    return fundRecords.filter(r => r.type === 'withdraw').reduce((sum, r) => sum + r.amount, 0);
-  }, [fundRecords]);
-
-  // 平仓原因显示
-  const getCloseReasonText = (reason: string, remark?: string) => {
-    if (reason === 'profit') return '正常止盈';
-    if (reason === 'loss') return '正常止损';
-    if (reason === 'other') return `其他原因 (${remark || '无备注'})`;
-    return reason;
-  };
-
-  // 获取带高亮的平仓原因组件
-  const getCloseReasonComponent = (reason: string, remark?: string) => {
-    if (reason === 'other' && remark) {
-      return (
-        <span>
-          其他原因 (<span className="text-yellow-400 font-semibold">{remark}</span>)
-        </span>
-      );
+  // 计算累计入金和出金（单次遍历）
+  const { totalDeposit, totalWithdraw } = useMemo(() => {
+    let deposit = 0;
+    let withdraw = 0;
+    for (const r of fundRecords) {
+      if (r.type === 'deposit') deposit += r.amount;
+      else withdraw += r.amount;
     }
-    return <span>{getCloseReasonText(reason, remark)}</span>;
-  };
-
-  // 将 date 和 openTime 合并为 datetime-local 格式
-  const combineDateTime = useCallback((date: string, time: string) => {
-    return `${date}T${time}`;
-  }, []);
+    return { totalDeposit: deposit, totalWithdraw: withdraw };
+  }, [fundRecords]);
 
   // 数据下载功能
   const handleDownloadData = useCallback(() => {
@@ -298,7 +246,7 @@ export default function TradingApp() {
         日期: t.date
       }))
     };
-    
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -315,57 +263,59 @@ export default function TradingApp() {
     if (!confirm('确定要删除这条交易记录吗？')) return;
 
     try {
-      const tradeToDelete = trades.find(t => t.id === tradeId);
-      if (!tradeToDelete) return;
-
-      // 删除交易记录（后端会自动还原余额）
       await api.trades.delete(tradeId, currentAccountId);
 
-      // 更新资产历史
-      const newBalance = balance - tradeToDelete.profitLoss;
-      await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
-      });
-
-      // 重新加载数据
       await loadData(currentAccountId);
 
+      const latestBalance = await fetchLatestBalance(currentAccountId);
+      await api.equityHistory.create({
+        date: new Date().toISOString(),
+        value: latestBalance,
+        accountId: currentAccountId,
+      });
+
+      await loadEquityHistory(currentAccountId);
+
       toast.success('删除交易记录成功');
-    } catch (error) {
-      console.error('Failed to delete trade:', error);
+    } catch (err) {
+      console.error('Failed to delete trade:', err);
       toast.error('删除交易记录失败');
     }
-  }, [balance, trades, currentAccountId, loadData]);
+  }, [currentAccountId, loadData, fetchLatestBalance, loadEquityHistory]);
 
-  // 编辑交易记录
+  // 编辑交易记录：填充表单并打开对话框
   const handleEditTrade = useCallback((trade: Trade) => {
     setEditingTrade(trade);
     setSymbol(trade.symbol);
     setStrategy(trade.strategy);
     setPosition(trade.position as PositionType);
-    setOpenDateTime(combineDateTime(trade.date, trade.openTime));
+    setOpenDateTime(`${trade.date}T${trade.openTime}`);
     setCloseReason(trade.closeReason);
     setRemark(trade.remark || '');
     setProfitLoss(String(trade.profitLoss));
     setIsClosed(trade.isClosed);
     setIsEditDialogOpen(true);
-  }, [combineDateTime]);
+  }, []);
+
+  // 关闭编辑对话框时 reset 表单，防止污染添加表单
+  const handleCloseEditDialog = useCallback((open: boolean) => {
+    setIsEditDialogOpen(open);
+    if (!open) {
+      setEditingTrade(null);
+      resetTradeForm();
+    }
+  }, [resetTradeForm]);
 
   // 保存编辑
   const handleSaveEdit = useCallback(async () => {
     if (!editingTrade || !symbol || !profitLoss || !openDateTime) return;
 
     try {
-      const oldProfitLoss = editingTrade.profitLoss;
       const newProfitLoss = Number(profitLoss);
-
-      // 将 openDateTime 拆分为 date 和 openTime
       const dateTime = new Date(openDateTime);
       const date = dateTime.toISOString().split('T')[0];
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
-      // 更新交易记录（后端会自动调整余额差值）
       await api.trades.update(editingTrade.id, {
         symbol,
         strategy,
@@ -374,33 +324,34 @@ export default function TradingApp() {
         closeReason,
         remark: closeReason === 'other' ? remark : undefined,
         profitLoss: newProfitLoss,
-        date: date,
+        date,
         isClosed,
         accountId: currentAccountId,
       });
 
-      // 更新资产历史
-      const newBalance = balance - oldProfitLoss + newProfitLoss;
-      await api.equityHistory.create({
-        date: new Date().toISOString(),
-        value: newBalance,
-      });
-
-      // 重新加载数据
       await loadData(currentAccountId);
 
-      // 关闭对话框
+      const latestBalance = await fetchLatestBalance(currentAccountId);
+      await api.equityHistory.create({
+        date: new Date().toISOString(),
+        value: latestBalance,
+        accountId: currentAccountId,
+      });
+
+      await loadEquityHistory(currentAccountId);
+
       setIsEditDialogOpen(false);
       setEditingTrade(null);
+      resetTradeForm();
 
       toast.success('保存交易记录成功');
-    } catch (error) {
-      console.error('Failed to save trade:', error);
+    } catch (err) {
+      console.error('Failed to save trade:', err);
       toast.error('保存交易记录失败');
     }
-  }, [editingTrade, symbol, profitLoss, openDateTime, strategy, position, closeReason, remark, isClosed, balance, currentAccountId, loadData]);
+  }, [editingTrade, symbol, profitLoss, openDateTime, strategy, position, closeReason, remark, isClosed, currentAccountId, loadData, fetchLatestBalance, loadEquityHistory, resetTradeForm]);
 
-  // 计算净权益（扣除出金后的资产）
+  // 计算净权益
   const netEquity = useMemo(() => {
     return equityHistory
       .filter((item) => item != null && item.value != null && !isNaN(Number(item.value)) && item.date != null)
@@ -422,30 +373,129 @@ export default function TradingApp() {
   // 根据日期范围过滤交易
   const filteredTrades = useMemo(() => {
     if (!filterStartDate && !filterEndDate) return trades;
-    
+
     return trades.filter(trade => {
       const tradeDate = new Date(trade.date);
       const start = filterStartDate ? new Date(filterStartDate) : null;
       const end = filterEndDate ? new Date(filterEndDate) : null;
-      
-      if (start && end) {
-        return tradeDate >= start && tradeDate <= end;
-      }
-      if (start) {
-        return tradeDate >= start;
-      }
-      if (end) {
-        return tradeDate <= end;
-      }
+
+      if (start && end) return tradeDate >= start && tradeDate <= end;
+      if (start) return tradeDate >= start;
+      if (end) return tradeDate <= end;
       return true;
     });
   }, [trades, filterStartDate, filterEndDate]);
+
+  // 共用的表单 JSX（添加/编辑复用）
+  const renderTradeFormFields = () => (
+    <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
+      <div className="space-y-2">
+        <Label className="text-cyan-400">交易品种</Label>
+        <Input
+          placeholder="例如：BTC/USDT"
+          value={symbol}
+          onChange={(e) => setSymbol(e.target.value)}
+          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-cyan-400">开仓日期</Label>
+        <Input
+          type="datetime-local"
+          value={openDateTime}
+          onChange={(e) => setOpenDateTime(e.target.value)}
+          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-cyan-400">入场策略 *</Label>
+        <Input
+          placeholder="请输入入场策略（必填）"
+          value={strategy}
+          onChange={(e) => setStrategy(e.target.value)}
+          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-cyan-400">仓位 (%)</Label>
+        <Select value={String(position)} onValueChange={(v) => setPosition(Number(v) as PositionType)}>
+          <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-cyan-500/30 bg-gray-800">
+            {POSITION_OPTIONS.map((opt) => (
+              <SelectItem key={opt} value={String(opt)} className="text-white hover:bg-gray-700">
+                {opt}%
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-cyan-400">开仓金额</Label>
+        <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-lg font-semibold text-cyan-400">
+          ${(openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+        <p className="text-sm text-cyan-500/60">开仓金额 = 仓位 × 资产余额</p>
+      </div>
+
+      <div className="flex items-center justify-between space-x-2 py-2">
+        <Label className="text-cyan-400 font-semibold">是否平仓</Label>
+        <Switch
+          checked={isClosed}
+          onCheckedChange={setIsClosed}
+          className="data-[state=checked]:bg-cyan-500 h-6 w-11 scale-110"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-cyan-400">平仓原因</Label>
+        <Select value={closeReason} onValueChange={(v) => setCloseReason(v as typeof closeReason)}>
+          <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-cyan-500/30 bg-gray-800">
+            <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
+            <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
+            <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {closeReason === 'other' && (
+        <div className="space-y-2">
+          <Label className="text-cyan-400">备注</Label>
+          <Textarea
+            placeholder="请输入备注信息"
+            value={remark}
+            onChange={(e) => setRemark(e.target.value)}
+            className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+          />
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label className="text-cyan-400">盈亏金额</Label>
+        <Input
+          type="number"
+          placeholder="正数为盈利，负数为亏损"
+          value={profitLoss}
+          onChange={(e) => setProfitLoss(e.target.value)}
+          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
+        />
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-slate-950 to-gray-900 p-4 md:p-8 relative overflow-hidden">
       {/* 背景网格效果 */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.03)_1px,transparent_1px)] bg-[size:50px_50px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_100%)] pointer-events-none" />
-      
+
       <div className="mx-auto max-w-6xl space-y-6 relative z-10">
         {/* 错误提示 */}
         {error && (
@@ -474,19 +524,42 @@ export default function TradingApp() {
                   accounts={accounts}
                   currentAccountId={currentAccountId}
                   setCurrentAccountId={setCurrentAccountId}
-                  onCreateAccount={handleCreateAccount}
-                  onUpdateAccount={handleUpdateAccount}
-                  onDeleteAccount={handleDeleteAccount}
-                  editingAccount={editingAccount}
-                  setEditingAccount={setEditingAccount}
-                  editAccountName={editAccountName}
-                  setEditAccountName={setEditAccountName}
-                  newAccountName={newAccountName}
-                  setNewAccountName={setNewAccountName}
-                  isAccountDialogOpen={isAccountDialogOpen}
-                  setIsAccountDialogOpen={setIsAccountDialogOpen}
+                  onCreateAccount={async (name) => {
+                    if (!name.trim()) return;
+                    try {
+                      await api.accounts.create(name.trim());
+                      await loadData(currentAccountId);
+                      toast.success('创建账户成功');
+                    } catch (e: any) {
+                      toast.error(e.message || '创建账户失败');
+                    }
+                  }}
+                  onUpdateAccount={async (account, name) => {
+                    if (!name.trim()) return;
+                    try {
+                      await api.accounts.update(account.id, name.trim());
+                      await loadData(currentAccountId);
+                      toast.success('更新账户成功');
+                    } catch (e: any) {
+                      toast.error(e.message || '更新账户失败');
+                    }
+                  }}
+                  onDeleteAccount={async (id) => {
+                    if (!confirm('确定要删除该账户及其所有数据吗？此操作不可撤销！')) return;
+                    try {
+                      await api.accounts.delete(id);
+                      // 删除后取列表中第一个可用账户，不硬编码 1
+                      const remaining = accounts.filter(a => a.id !== id);
+                      const nextId = remaining.length > 0 ? remaining[0].id : 1;
+                      setCurrentAccountId(nextId);
+                      await loadData(nextId);
+                      toast.success('删除账户成功');
+                    } catch (e: any) {
+                      toast.error(e.message || '删除账户失败');
+                    }
+                  }}
                 />
-                <Button 
+                <Button
                   onClick={handleDownloadData}
                   className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 shadow-[0_0_20px_rgba(6,182,212,0.4)]"
                 >
@@ -503,12 +576,6 @@ export default function TradingApp() {
               onDeleteFundRecord={handleDeleteFundRecord}
               totalDeposit={totalDeposit}
               totalWithdraw={totalWithdraw}
-              fundAmount={fundAmount}
-              setFundAmount={setFundAmount}
-              isDepositDialogOpen={isDepositDialogOpen}
-              setIsDepositDialogOpen={setIsDepositDialogOpen}
-              isWithdrawDialogOpen={isWithdrawDialogOpen}
-              setIsWithdrawDialogOpen={setIsWithdrawDialogOpen}
             />
 
             {/* 资产走势图 */}
@@ -516,7 +583,6 @@ export default function TradingApp() {
 
             {/* 我的交易数据 */}
             <TradingStats
-              trades={trades}
               filterStartDate={filterStartDate}
               setFilterStartDate={setFilterStartDate}
               filterEndDate={filterEndDate}
@@ -536,115 +602,7 @@ export default function TradingApp() {
                   <DialogTitle className="text-cyan-400">添加交易记录</DialogTitle>
                   <DialogDescription className="text-cyan-500/60">填写交易信息</DialogDescription>
                 </DialogHeader>
-                <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="symbol" className="text-cyan-400">交易品种</Label>
-                    <Input
-                      id="symbol"
-                      placeholder="例如：BTC/USDT"
-                      value={symbol}
-                      onChange={(e) => setSymbol(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="trade-date" className="text-cyan-400">开仓日期</Label>
-                    <Input
-                      id="trade-date"
-                      type="datetime-local"
-                      value={openDateTime}
-                      onChange={(e) => setOpenDateTime(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="strategy" className="text-cyan-400">入场策略 *</Label>
-                    <Input
-                      id="strategy"
-                      placeholder="请输入入场策略（必填）"
-                      value={strategy}
-                      onChange={(e) => setStrategy(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="position" className="text-cyan-400">仓位 (%)</Label>
-                    <Select value={String(position)} onValueChange={(value) => setPosition(Number(value) as PositionType)}>
-                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="border-cyan-500/30 bg-gray-800">
-                        {POSITION_OPTIONS.map((opt) => (
-                          <SelectItem key={opt} value={String(opt)} className="text-white hover:bg-gray-700">
-                            {opt}%
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-cyan-400">开仓金额</Label>
-                    <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-lg font-semibold text-cyan-400">
-                      ${(openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    <p className="text-sm text-cyan-500/60">开仓金额 = 仓位 × 资产余额</p>
-                  </div>
-
-                  <div className="flex items-center justify-between space-x-2 py-2">
-                    <Label htmlFor="is-closed" className="text-cyan-400 font-semibold">
-                      是否平仓
-                    </Label>
-                    <Switch
-                      id="is-closed"
-                      checked={isClosed}
-                      onCheckedChange={setIsClosed}
-                      className="data-[state=checked]:bg-cyan-500 h-6 w-11 scale-110"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="close-reason" className="text-cyan-400">平仓原因</Label>
-                    <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
-                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="border-cyan-500/30 bg-gray-800">
-                        <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
-                        <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
-                        <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {closeReason === 'other' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="remark" className="text-cyan-400">备注</Label>
-                      <Textarea
-                        id="remark"
-                        placeholder="请输入备注信息"
-                        value={remark}
-                        onChange={(e) => setRemark(e.target.value)}
-                        className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="profit-loss" className="text-cyan-400">盈亏金额</Label>
-                    <Input
-                      id="profit-loss"
-                      type="number"
-                      placeholder="正数为盈利，负数为亏损"
-                      value={profitLoss}
-                      onChange={(e) => setProfitLoss(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
+                {renderTradeFormFields()}
                 <DialogFooter className="mt-4 pt-4 border-t border-cyan-500/20">
                   <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700" onClick={handleAddTrade}>添加记录</Button>
                 </DialogFooter>
@@ -652,125 +610,18 @@ export default function TradingApp() {
             </Dialog>
 
             {/* 编辑交易记录对话框 */}
-            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+            <Dialog open={isEditDialogOpen} onOpenChange={handleCloseEditDialog}>
               <DialogContent className="border-cyan-500/30 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col">
                 <DialogHeader>
                   <DialogTitle className="text-cyan-400">编辑交易记录</DialogTitle>
                   <DialogDescription className="text-cyan-500/60">修改交易信息</DialogDescription>
                 </DialogHeader>
-                <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-symbol" className="text-cyan-400">交易品种</Label>
-                    <Input
-                      id="edit-symbol"
-                      placeholder="例如：BTC/USDT"
-                      value={symbol}
-                      onChange={(e) => setSymbol(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-trade-date" className="text-cyan-400">开仓日期</Label>
-                    <Input
-                      id="edit-trade-date"
-                      type="datetime-local"
-                      value={openDateTime}
-                      onChange={(e) => setOpenDateTime(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-strategy" className="text-cyan-400">入场策略</Label>
-                    <Input
-                      id="edit-strategy"
-                      placeholder="请输入入场策略"
-                      value={strategy}
-                      onChange={(e) => setStrategy(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-position" className="text-cyan-400">仓位 (%)</Label>
-                    <Select value={String(position)} onValueChange={(value) => setPosition(Number(value) as PositionType)}>
-                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="border-cyan-500/30 bg-gray-800">
-                        {POSITION_OPTIONS.map((opt) => (
-                          <SelectItem key={opt} value={String(opt)} className="text-white hover:bg-gray-700">
-                            {opt}%
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-cyan-400">开仓金额</Label>
-                    <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-lg font-semibold text-cyan-400">
-                      ${(openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between space-x-2 py-2">
-                    <Label htmlFor="edit-is-closed" className="text-cyan-400 font-semibold">
-                      是否平仓
-                    </Label>
-                    <Switch
-                      id="edit-is-closed"
-                      checked={isClosed}
-                      onCheckedChange={setIsClosed}
-                      className="data-[state=checked]:bg-cyan-500 h-6 w-11 scale-110"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-close-reason" className="text-cyan-400">平仓原因</Label>
-                    <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
-                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="border-cyan-500/30 bg-gray-800">
-                        <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
-                        <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
-                        <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {closeReason === 'other' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-remark" className="text-cyan-400">备注</Label>
-                      <Textarea
-                        id="edit-remark"
-                        placeholder="请输入备注信息"
-                        value={remark}
-                        onChange={(e) => setRemark(e.target.value)}
-                        className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-profit-loss" className="text-cyan-400">盈亏金额</Label>
-                    <Input
-                      id="edit-profit-loss"
-                      type="number"
-                      placeholder="正数为盈利，负数为亏损"
-                      value={profitLoss}
-                      onChange={(e) => setProfitLoss(e.target.value)}
-                      className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
+                {renderTradeFormFields()}
                 <DialogFooter className="mt-4 pt-4 border-t border-cyan-500/20">
-                  <Button 
+                  <Button
                     variant="outline"
                     className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
-                    onClick={() => setIsEditDialogOpen(false)}
+                    onClick={() => handleCloseEditDialog(false)}
                   >
                     取消
                   </Button>
@@ -779,9 +630,9 @@ export default function TradingApp() {
               </DialogContent>
             </Dialog>
 
-            {/* 交易记录列表 */}
+            {/* 交易记录列表（传 filteredTrades，和统计保持一致） */}
             <TradeTable
-              trades={trades}
+              trades={filteredTrades}
               onEditTrade={handleEditTrade}
               onDeleteTrade={handleDeleteTrade}
             />

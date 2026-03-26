@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const accountId = searchParams.get('accountId') || '1';
+
     const { data, error } = await supabase
       .from('equity_history')
       .select('*')
+      .eq('account_id', accountId)
       .order('date', { ascending: true });
 
     if (error) throw error;
@@ -16,6 +20,7 @@ export async function GET() {
         id: row.id,
         date: row.date,
         value: Number(row.value) || 0,
+        accountId: row.account_id,
         createdAt: row.created_at,
       }));
 
@@ -29,10 +34,11 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const accountId = body.accountId || 1;
 
     const { data: record, error } = await supabase
       .from('equity_history')
-      .insert({ date: body.date, value: String(body.value) })
+      .insert({ date: body.date, value: String(body.value), account_id: accountId })
       .select()
       .single();
 
@@ -43,6 +49,7 @@ export async function POST(request: Request) {
         id: record.id,
         date: record.date,
         value: Number(record.value),
+        accountId: record.account_id,
         createdAt: record.created_at,
       }
     });
@@ -52,13 +59,15 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
-    // Supabase 要求 DELETE 必须带过滤条件，使用 neq 确保删除所有记录
+    const { searchParams } = new URL(request.url);
+    const accountId = searchParams.get('accountId') || '1';
+
     const { error } = await supabase
       .from('equity_history')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000');
+      .eq('account_id', accountId);
 
     if (error) throw error;
 
