@@ -113,7 +113,7 @@ export default function TradingApp() {
     const loadEquityHistory = async () => {
       try {
         const equityHistoryRes = await api.equityHistory.getAll();
-        setEquityHistory(equityHistoryRes.history);
+        setEquityHistory(equityHistoryRes.history || []);
       } catch (error) {
         console.error('Failed to load equity history:', error);
       }
@@ -402,18 +402,21 @@ export default function TradingApp() {
 
   // 计算净权益（扣除出金后的资产）
   const netEquity = useMemo(() => {
-    return equityHistory.map((item) => {
-      let totalWithdrawals = 0;
-      for (const record of fundRecords) {
-        if (record.type === 'withdraw' && new Date(record.date) <= new Date(item.date)) {
-          totalWithdrawals += record.amount;
+    return equityHistory
+      .filter((item) => item != null && item.value != null && !isNaN(Number(item.value)) && item.date != null)
+      .map((item) => {
+        let totalWithdrawals = 0;
+        for (const record of fundRecords) {
+          if (record.type === 'withdraw' && new Date(record.date) <= new Date(item.date)) {
+            totalWithdrawals += (record.amount || 0);
+          }
         }
-      }
-      return {
-        date: new Date(item.date).toLocaleDateString('zh-CN'),
-        value: item.value - totalWithdrawals,
-      };
-    });
+        const value = Number(item.value) - totalWithdrawals;
+        return {
+          date: new Date(item.date).toLocaleDateString('zh-CN'),
+          value: isNaN(value) ? 0 : value,
+        };
+      });
   }, [equityHistory, fundRecords]);
 
   // 根据日期范围过滤交易

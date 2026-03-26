@@ -10,12 +10,14 @@ export async function GET() {
 
     if (error) throw error;
 
-    const history = data.map((row: any) => ({
-      id: row.id,
-      date: row.date,
-      value: Number(row.value),
-      createdAt: row.created_at,
-    }));
+    const history = data
+      .filter((row: any) => row.value != null && row.date != null)
+      .map((row: any) => ({
+        id: row.id,
+        date: row.date,
+        value: Number(row.value) || 0,
+        createdAt: row.created_at,
+      }));
 
     return NextResponse.json({ history });
   } catch (error) {

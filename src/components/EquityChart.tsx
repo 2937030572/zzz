@@ -7,6 +7,10 @@ interface EquityChartProps {
 }
 
 export const EquityChart: React.FC<EquityChartProps> = ({ netEquity }) => {
+  // 过滤掉 value 为 null/undefined/NaN 的数据点，防止 recharts 内部崩溃
+  const safeData = netEquity.filter(
+    (item) => item != null && typeof item.value === 'number' && !isNaN(item.value)
+  );
   return (
     <Card className="border-cyan-500/30 bg-gray-900/80 shadow-[0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-sm">
       <CardHeader className="border-b border-cyan-500/20">
@@ -15,9 +19,9 @@ export const EquityChart: React.FC<EquityChartProps> = ({ netEquity }) => {
       </CardHeader>
       <CardContent>
         <div className="h-[300px] w-full">
-          {netEquity.length > 0 ? (
+          {safeData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={netEquity}>
+              <LineChart data={safeData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(6,182,212,0.1)" />
                 <XAxis dataKey="date" stroke="#06b6d4" />
                 <YAxis stroke="#06b6d4" />
