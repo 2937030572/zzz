@@ -175,7 +175,11 @@ export default function TradingApp() {
 
   // 添加交易记录
   const handleAddTrade = useCallback(async () => {
-    if (!symbol || !profitLoss || !openDateTime) return;
+    // profitLoss 允许为 '0'，只拦截空字符串
+    if (!symbol || profitLoss === '' || !openDateTime) {
+      toast.error('请填写交易品种、开仓日期和盈亏金额');
+      return;
+    }
 
     try {
       const pl = Number(profitLoss);
@@ -208,13 +212,14 @@ export default function TradingApp() {
 
       await loadEquityHistory(currentAccountId);
 
-      resetTradeForm();
-      setIsTradeDialogOpen(false);
-
       toast.success('添加交易记录成功');
     } catch (err) {
       console.error('Failed to add trade:', err);
       toast.error('添加交易记录失败');
+    } finally {
+      // 无论成功失败，都关闭对话框并重置表单
+      resetTradeForm();
+      setIsTradeDialogOpen(false);
     }
   }, [symbol, profitLoss, openDateTime, strategy, position, openAmount, closeReason, remark, isClosed, currentAccountId, loadData, fetchLatestBalance, loadEquityHistory, resetTradeForm]);
 
@@ -311,7 +316,10 @@ export default function TradingApp() {
 
   // 保存编辑
   const handleSaveEdit = useCallback(async () => {
-    if (!editingTrade || !symbol || !profitLoss || !openDateTime) return;
+    if (!editingTrade || !symbol || profitLoss === '' || !openDateTime) {
+      toast.error('请填写交易品种、开仓日期和盈亏金额');
+      return;
+    }
 
     try {
       const newProfitLoss = Number(profitLoss);
@@ -343,14 +351,15 @@ export default function TradingApp() {
 
       await loadEquityHistory(currentAccountId);
 
-      setIsEditDialogOpen(false);
-      setEditingTrade(null);
-      resetTradeForm();
-
       toast.success('保存交易记录成功');
     } catch (err) {
       console.error('Failed to save trade:', err);
       toast.error('保存交易记录失败');
+    } finally {
+      // 无论成功失败，都关闭对话框并清理状态
+      setIsEditDialogOpen(false);
+      setEditingTrade(null);
+      resetTradeForm();
     }
   }, [editingTrade, symbol, profitLoss, openDateTime, strategy, position, closeReason, remark, isClosed, currentAccountId, loadData, fetchLatestBalance, loadEquityHistory, resetTradeForm]);
 
