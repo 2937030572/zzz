@@ -8,7 +8,9 @@ export async function GET(request: Request) {
     const endDate = searchParams.get('endDate');
     const accountId = searchParams.get('accountId');
 
-    let query = supabase.from('trades').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('trades').select('*')
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
 
     if (accountId) {
       query = query.eq('account_id', accountId);

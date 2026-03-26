@@ -35,14 +35,38 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const accountId = body.accountId || 1;
+    const dateStr = body.date;
+    const valueStr = String(body.value);
 
-    const { data: record, error } = await supabase
+    // 先查当天是否已有记录
+    const { data: existing } = await supabase
       .from('equity_history')
-      .insert({ date: body.date, value: String(body.value), account_id: accountId })
-      .select()
-      .single();
+      .select('id')
+      .eq('date', dateStr)
+      .eq('account_id', accountId)
+      .maybeSingle();
 
-    if (error) throw error;
+    let record;
+    if (existing) {
+      // 已有记录：更新 value
+      const { data, error } = await supabase
+        .from('equity_history')
+        .update({ value: valueStr })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      if (error) throw error;
+      record = data;
+    } else {
+      // 无记录：插入新行
+      const { data, error } = await supabase
+        .from('equity_history')
+        .insert({ date: dateStr, value: valueStr, account_id: accountId })
+        .select()
+        .single();
+      if (error) throw error;
+      record = data;
+    }
 
     return NextResponse.json({
       record: {
