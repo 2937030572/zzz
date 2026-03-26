@@ -11,8 +11,9 @@ export const useTradingData = (initialAccountId: number = 1) => {
   const [error, setError] = useState<string | null>(null);
 
   // 加载数据
-  const loadData = useCallback(async (accountId: number) => {
-    setLoading(true);
+  // silent=true 时不触发全屏 loading（操作后静默刷新用）
+  const loadData = useCallback(async (accountId: number, silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [accountsRes, balanceRes, tradesRes, fundRecordsRes] = await Promise.all([
@@ -30,7 +31,7 @@ export const useTradingData = (initialAccountId: number = 1) => {
       setError(err.message || 'Failed to load data');
       console.error('Failed to load data:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 

@@ -25,6 +25,7 @@ export const TradingStats: React.FC<TradingStatsProps> = ({
     let totalLoss = 0;
     let totalPnL = 0;
     let winCount = 0;
+    let lossCount = 0;
 
     for (const t of filteredTrades) {
       const pl = t.profitLoss ?? 0;
@@ -34,11 +35,12 @@ export const TradingStats: React.FC<TradingStatsProps> = ({
         winCount++;
       } else if (pl < 0) {
         totalLoss += pl;
+        lossCount++;
       }
+      // pl === 0 不计入盈利也不计入亏损
     }
 
     const totalTrades = filteredTrades.length;
-    const lossCount = totalTrades - winCount;
     const winRate = totalTrades > 0 ? Math.round((winCount / totalTrades) * 100) : 0;
 
     return { totalProfit, totalLoss, totalPnL, winCount, lossCount, totalTrades, winRate };

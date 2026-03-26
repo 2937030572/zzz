@@ -129,13 +129,13 @@ export default function TradingApp() {
         accountId: currentAccountId,
       });
 
-      // 重新加载数据以获取最新余额
-      await loadData(currentAccountId);
+      // 重新加载数据以获取最新余额（静默刷新，不触发全屏 loading）
+      await loadData(currentAccountId, true);
 
       // 用最新余额写入净值快照
       const latestBalance = await fetchLatestBalance(currentAccountId);
       await api.equityHistory.create({
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
         value: latestBalance,
         accountId: currentAccountId,
       });
@@ -151,14 +151,15 @@ export default function TradingApp() {
 
   // 删除出入金记录
   const handleDeleteFundRecord = useCallback(async (id: string) => {
+    if (!confirm('确定要删除这条出入金记录吗？')) return;
     try {
       await api.fundRecords.delete(id, currentAccountId);
 
-      await loadData(currentAccountId);
+      await loadData(currentAccountId, true);
 
       const latestBalance = await fetchLatestBalance(currentAccountId);
       await api.equityHistory.create({
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
         value: latestBalance,
         accountId: currentAccountId,
       });
@@ -189,18 +190,18 @@ export default function TradingApp() {
         openAmount,
         openTime: time,
         closeReason,
-        remark: closeReason === 'other' ? remark : undefined,
+        remark: closeReason === 'other' ? remark : '',
         profitLoss: pl,
         date,
         isClosed,
         accountId: currentAccountId,
       });
 
-      await loadData(currentAccountId);
+      await loadData(currentAccountId, true);
 
       const latestBalance = await fetchLatestBalance(currentAccountId);
       await api.equityHistory.create({
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
         value: latestBalance,
         accountId: currentAccountId,
       });
@@ -265,11 +266,11 @@ export default function TradingApp() {
     try {
       await api.trades.delete(tradeId, currentAccountId);
 
-      await loadData(currentAccountId);
+      await loadData(currentAccountId, true);
 
       const latestBalance = await fetchLatestBalance(currentAccountId);
       await api.equityHistory.create({
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
         value: latestBalance,
         accountId: currentAccountId,
       });
@@ -289,7 +290,9 @@ export default function TradingApp() {
     setSymbol(trade.symbol);
     setStrategy(trade.strategy);
     setPosition(trade.position as PositionType);
-    setOpenDateTime(`${trade.date}T${trade.openTime}`);
+    // openTime 可能为空字符串，兜底用 00:00
+    const timeStr = trade.openTime && trade.openTime.length >= 5 ? trade.openTime : '00:00';
+    setOpenDateTime(`${trade.date}T${timeStr}`);
     setCloseReason(trade.closeReason);
     setRemark(trade.remark || '');
     setProfitLoss(String(trade.profitLoss));
@@ -322,18 +325,18 @@ export default function TradingApp() {
         position,
         openTime: time,
         closeReason,
-        remark: closeReason === 'other' ? remark : undefined,
+        remark: closeReason === 'other' ? remark : '',
         profitLoss: newProfitLoss,
         date,
         isClosed,
         accountId: currentAccountId,
       });
 
-      await loadData(currentAccountId);
+      await loadData(currentAccountId, true);
 
       const latestBalance = await fetchLatestBalance(currentAccountId);
       await api.equityHistory.create({
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
         value: latestBalance,
         accountId: currentAccountId,
       });
