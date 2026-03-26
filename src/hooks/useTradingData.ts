@@ -23,10 +23,27 @@ export const useTradingData = (initialAccountId: number = 1) => {
         api.fundRecords.getAll(1000, accountId)
       ]);
       
-      setAccounts(accountsRes.accounts || []);
-      setBalance(balanceRes.balance || 0);
-      setTrades(tradesRes.trades || []);
-      setFundRecords(fundRecordsRes.records || []);
+      setAccounts((accountsRes.accounts || []).filter(Boolean));
+      setBalance(Number(balanceRes.balance) || 0);
+      setTrades((tradesRes.trades || []).filter(Boolean).map((t: any) => ({
+        ...t,
+        profitLoss: t.profitLoss != null ? Number(t.profitLoss) : 0,
+        openAmount: t.openAmount != null ? Number(t.openAmount) : 0,
+        position: t.position != null ? Number(t.position) : 0,
+        symbol: t.symbol || '',
+        strategy: t.strategy || '',
+        openTime: t.openTime || '',
+        closeReason: t.closeReason || 'profit',
+        remark: t.remark || '',
+        date: t.date || '',
+        isClosed: t.isClosed ?? true,
+      })));
+      setFundRecords((fundRecordsRes.records || []).filter(Boolean).map((r: any) => ({
+        ...r,
+        amount: r.amount != null ? Number(r.amount) : 0,
+        date: r.date || '',
+        type: r.type || 'deposit',
+      })));
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
       console.error('Failed to load data:', err);

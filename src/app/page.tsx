@@ -357,19 +357,20 @@ export default function TradingApp() {
   // 计算净权益
   const netEquity = useMemo(() => {
     return equityHistory
-      .filter((item) => item != null && item.value != null && !isNaN(Number(item.value)) && item.date != null)
+      .filter((item) => item != null && item.value != null && !isNaN(Number(item.value)) && item.date != null && item.date !== '')
       .map((item) => {
         let totalWithdrawals = 0;
         for (const record of fundRecords) {
+          if (!record || !record.date) continue;
           if (record.type === 'withdraw' && new Date(record.date) <= new Date(item.date)) {
-            totalWithdrawals += (record.amount || 0);
+            totalWithdrawals += (Number(record.amount) || 0);
           }
         }
-        const value = Number(item.value) - totalWithdrawals;
-        return {
-          date: new Date(item.date).toLocaleDateString('zh-CN'),
-          value: isNaN(value) ? 0 : value,
-        };
+        const raw = Number(item.value) - totalWithdrawals;
+        const value = isNaN(raw) ? 0 : raw;
+        const dateObj = new Date(item.date);
+        const dateLabel = isNaN(dateObj.getTime()) ? item.date : dateObj.toLocaleDateString('zh-CN');
+        return { date: dateLabel, value };
       });
   }, [equityHistory, fundRecords]);
 
