@@ -16,7 +16,8 @@ import { BalanceCard } from '@/components/BalanceCard';
 import { EquityChart } from '@/components/EquityChart';
 import { TradingStats } from '@/components/TradingStats';
 import { TradeTable } from '@/components/TradeTable';
-import { Trade, FundRecord, PositionType } from '@/types';
+import { Trade, PositionType } from '@/types';
+import { AccountManager } from '@/components/AccountManager';
 
 // 仓位选项：5% 到 50%，每个增加 5%
 const POSITION_OPTIONS = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
@@ -28,11 +29,8 @@ export default function TradingApp() {
     currentAccountId, 
     setCurrentAccountId, 
     balance, 
-    setBalance, 
     trades, 
-    setTrades, 
     fundRecords, 
-    setFundRecords, 
     loading, 
     error, 
     loadData 
@@ -66,7 +64,51 @@ export default function TradingApp() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // 加载资产历史
+  // 账户管理状态
+  const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+  const [editAccountName, setEditAccountName] = useState('');
+  const [newAccountName, setNewAccountName] = useState('');
+
+  // 账户操作
+  const handleCreateAccount = useCallback(async (name: string) => {
+    if (!name.trim()) return;
+    try {
+      await api.accounts.create(name.trim());
+      setNewAccountName('');
+      await loadData(currentAccountId);
+      toast.success('创建账户成功');
+    } catch (error: any) {
+      toast.error(error.message || '创建账户失败');
+    }
+  }, [currentAccountId, loadData]);
+
+  const handleUpdateAccount = useCallback(async (account: any, name: string) => {
+    if (!name.trim()) return;
+    try {
+      await api.accounts.update(account.id, name.trim());
+      setEditingAccount(null);
+      setEditAccountName('');
+      await loadData(currentAccountId);
+      toast.success('更新账户成功');
+    } catch (error: any) {
+      toast.error(error.message || '更新账户失败');
+    }
+  }, [currentAccountId, loadData]);
+
+  const handleDeleteAccount = useCallback(async (id: number) => {
+    if (!confirm('确定要删除该账户及其所有数据吗？此操作不可撤销！')) return;
+    try {
+      await api.accounts.delete(id);
+      if (currentAccountId === id) setCurrentAccountId(1);
+      await loadData(1);
+      toast.success('删除账户成功');
+    } catch (error: any) {
+      toast.error(error.message || '删除账户失败');
+    }
+  }, [currentAccountId, loadData, setCurrentAccountId]);
+
+  // 加载资产历史（随账户切换刷新）
   useEffect(() => {
     const loadEquityHistory = async () => {
       try {
@@ -78,7 +120,7 @@ export default function TradingApp() {
     };
 
     loadEquityHistory();
-  }, []);
+  }, [currentAccountId]);
 
   // 计算开仓金额
   useEffect(() => {
@@ -91,29 +133,22 @@ export default function TradingApp() {
     if (!amount || amount <= 0) return;
 
     try {
-      // 创建出入金记录
-      const recordRes = await api.fundRecords.create({
+      // 创建出入金记录（后端会自动更新余额）
+      await api.fundRecords.create({
         type,
         amount,
         date: new Date().toISOString().split('T')[0],
+        accountId: currentAccountId,
       });
 
-      // 更新余额
-      const newBalance = type === 'deposit' ? balance + amount : balance - amount;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
-
-      // 更新出入金记录列表
-      setFundRecords([recordRes.record, ...fundRecords]);
-
       // 更新资产历史
-      const historyRes = await api.equityHistory.create({
+      const newBalance = type === 'deposit' ? balance + amount : balance - amount;
+      await api.equityHistory.create({
         date: new Date().toISOString(),
         value: newBalance,
       });
-      setEquityHistory([...equityHistory, historyRes.record]);
 
-      // 重新加载数据
+      // 重新加载数据以同步最新状态
       await loadData(currentAccountId);
 
       setFundAmount('');
@@ -128,7 +163,7 @@ export default function TradingApp() {
       console.error('Failed to add fund record:', error);
       toast.error(type === 'deposit' ? '添加入金记录失败' : '添加出金记录失败');
     }
-  }, [balance, fundRecords, equityHistory, currentAccountId, loadData, setBalance, setFundRecords, setEquityHistory, setFundAmount, setIsDepositDialogOpen, setIsWithdrawDialogOpen]);
+  }, [balance, currentAccountId, loadData]);
 
   // 删除出入金记录
   const handleDeleteFundRecord = useCallback(async (id: string) => {
@@ -136,23 +171,15 @@ export default function TradingApp() {
       const record = fundRecords.find(r => r.id === id);
       if (!record) return;
 
-      // 删除记录
-      await api.fundRecords.delete(id);
-
-      // 如果是入金，减去金额；如果是出金，加上金额
-      const newBalance = record.type === 'deposit' ? balance - record.amount : balance + record.amount;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
-
-      // 删除记录
-      setFundRecords(fundRecords.filter(r => r.id !== id));
+      // 删除记录（后端会自动还原余额）
+      await api.fundRecords.delete(id, currentAccountId);
 
       // 更新资产历史
-      const historyRes = await api.equityHistory.create({
+      const newBalance = record.type === 'deposit' ? balance - record.amount : balance + record.amount;
+      await api.equityHistory.create({
         date: new Date().toISOString(),
         value: newBalance,
       });
-      setEquityHistory([...equityHistory, historyRes.record]);
 
       // 重新加载数据
       await loadData(currentAccountId);
@@ -162,7 +189,7 @@ export default function TradingApp() {
       console.error('Failed to delete fund record:', error);
       toast.error('删除出入金记录失败');
     }
-  }, [balance, fundRecords, equityHistory, currentAccountId, loadData, setBalance, setFundRecords, setEquityHistory]);
+  }, [balance, fundRecords, currentAccountId, loadData]);
 
   // 添加交易记录
   const handleAddTrade = useCallback(async () => {
@@ -176,8 +203,8 @@ export default function TradingApp() {
       const date = dateTime.toISOString().split('T')[0];
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
-      // 创建交易记录
-      const tradeRes = await api.trades.create({
+      // 创建交易记录（后端会自动更新余额）
+      await api.trades.create({
         symbol,
         strategy,
         position,
@@ -188,22 +215,15 @@ export default function TradingApp() {
         profitLoss: pl,
         date: date,
         isClosed,
+        accountId: currentAccountId,
       });
 
-      // 更新余额
-      const newBalance = balance + pl;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
-
-      // 添加交易记录
-      setTrades([tradeRes.trade, ...trades]);
-
       // 更新资产历史
-      const historyRes = await api.equityHistory.create({
+      const newBalance = balance + pl;
+      await api.equityHistory.create({
         date: new Date().toISOString(),
         value: newBalance,
       });
-      setEquityHistory([...equityHistory, historyRes.record]);
 
       // 重新加载数据
       await loadData(currentAccountId);
@@ -224,7 +244,7 @@ export default function TradingApp() {
       console.error('Failed to add trade:', error);
       toast.error('添加交易记录失败');
     }
-  }, [symbol, profitLoss, openDateTime, strategy, position, openAmount, closeReason, remark, isClosed, balance, trades, equityHistory, currentAccountId, loadData, setBalance, setTrades, setEquityHistory, setSymbol, setStrategy, setPosition, setCloseReason, setRemark, setProfitLoss, setOpenDateTime, setIsClosed, setIsTradeDialogOpen]);
+  }, [symbol, profitLoss, openDateTime, strategy, position, openAmount, closeReason, remark, isClosed, balance, currentAccountId, loadData]);
 
   // 计算累计入金和出金
   const totalDeposit = useMemo(() => {
@@ -298,23 +318,15 @@ export default function TradingApp() {
       const tradeToDelete = trades.find(t => t.id === tradeId);
       if (!tradeToDelete) return;
 
-      // 删除交易记录
-      await api.trades.delete(tradeId);
-
-      // 更新余额
-      const newBalance = balance - tradeToDelete.profitLoss;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
-
-      // 删除记录
-      setTrades(trades.filter(t => t.id !== tradeId));
+      // 删除交易记录（后端会自动还原余额）
+      await api.trades.delete(tradeId, currentAccountId);
 
       // 更新资产历史
-      const historyRes = await api.equityHistory.create({
+      const newBalance = balance - tradeToDelete.profitLoss;
+      await api.equityHistory.create({
         date: new Date().toISOString(),
         value: newBalance,
       });
-      setEquityHistory([...equityHistory, historyRes.record]);
 
       // 重新加载数据
       await loadData(currentAccountId);
@@ -324,7 +336,7 @@ export default function TradingApp() {
       console.error('Failed to delete trade:', error);
       toast.error('删除交易记录失败');
     }
-  }, [balance, trades, equityHistory, currentAccountId, loadData, setBalance, setTrades, setEquityHistory]);
+  }, [balance, trades, currentAccountId, loadData]);
 
   // 编辑交易记录
   const handleEditTrade = useCallback((trade: Trade) => {
@@ -353,8 +365,8 @@ export default function TradingApp() {
       const date = dateTime.toISOString().split('T')[0];
       const time = dateTime.toTimeString().split(' ')[0].slice(0, 5);
 
-      // 更新交易记录
-      const updatedTradeRes = await api.trades.update(editingTrade.id, {
+      // 更新交易记录（后端会自动调整余额差值）
+      await api.trades.update(editingTrade.id, {
         symbol,
         strategy,
         position,
@@ -364,22 +376,15 @@ export default function TradingApp() {
         profitLoss: newProfitLoss,
         date: date,
         isClosed,
+        accountId: currentAccountId,
       });
 
-      // 更新余额（新盈亏 - 旧盈亏）
-      const newBalance = balance - oldProfitLoss + newProfitLoss;
-      await api.balance.update(newBalance);
-      setBalance(newBalance);
-
-      // 更新交易列表
-      setTrades(trades.map(t => t.id === editingTrade.id ? updatedTradeRes.trade : t));
-
       // 更新资产历史
-      const historyRes = await api.equityHistory.create({
+      const newBalance = balance - oldProfitLoss + newProfitLoss;
+      await api.equityHistory.create({
         date: new Date().toISOString(),
         value: newBalance,
       });
-      setEquityHistory([...equityHistory, historyRes.record]);
 
       // 重新加载数据
       await loadData(currentAccountId);
@@ -393,7 +398,7 @@ export default function TradingApp() {
       console.error('Failed to save trade:', error);
       toast.error('保存交易记录失败');
     }
-  }, [editingTrade, symbol, profitLoss, openDateTime, strategy, position, closeReason, remark, isClosed, balance, trades, equityHistory, currentAccountId, loadData, setBalance, setTrades, setEquityHistory, setIsEditDialogOpen, setEditingTrade]);
+  }, [editingTrade, symbol, profitLoss, openDateTime, strategy, position, closeReason, remark, isClosed, balance, currentAccountId, loadData]);
 
   // 计算净权益（扣除出金后的资产）
   const netEquity = useMemo(() => {
@@ -456,12 +461,28 @@ export default function TradingApp() {
         ) : (
           <div className="space-y-6">
             {/* 标题和下载按钮 */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div className="flex-1 rounded-xl border border-cyan-500/30 bg-gray-900/80 p-6 text-center shadow-[0_0_30px_rgba(6,182,212,0.2)] backdrop-blur-sm">
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">交易记录系统</h1>
                 <p className="mt-2 text-cyan-500/70">管理您的交易记录和资产</p>
               </div>
-              <div className="ml-4">
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <AccountManager
+                  accounts={accounts}
+                  currentAccountId={currentAccountId}
+                  setCurrentAccountId={setCurrentAccountId}
+                  onCreateAccount={handleCreateAccount}
+                  onUpdateAccount={handleUpdateAccount}
+                  onDeleteAccount={handleDeleteAccount}
+                  editingAccount={editingAccount}
+                  setEditingAccount={setEditingAccount}
+                  editAccountName={editAccountName}
+                  setEditAccountName={setEditAccountName}
+                  newAccountName={newAccountName}
+                  setNewAccountName={setNewAccountName}
+                  isAccountDialogOpen={isAccountDialogOpen}
+                  setIsAccountDialogOpen={setIsAccountDialogOpen}
+                />
                 <Button 
                   onClick={handleDownloadData}
                   className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 shadow-[0_0_20px_rgba(6,182,212,0.4)]"

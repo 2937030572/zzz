@@ -2,16 +2,6 @@ import type { Metadata } from 'next';
 import { Inspector } from 'react-dev-inspector';
 import './globals.css';
 
-// 全局兜底：任何 null/undefined 调用 toLocaleString 都返回 0
-// @ts-ignore - 忽略类型检查，因为我们是在扩展原型
-Number.prototype.toLocaleString = function() {
-  return (this ?? 0).toString();
-};
-
-// @ts-ignore - 忽略类型检查，因为我们是在扩展原型
-String.prototype.toLocaleString = function() {
-  return this ?? '';
-};
 
 export const metadata: Metadata = {
   title: {
