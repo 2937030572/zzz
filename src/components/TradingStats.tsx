@@ -28,7 +28,7 @@ export const TradingStats: React.FC<TradingStatsProps> = ({
     let lossCount = 0;
 
     for (const t of filteredTrades) {
-      const pl = t.profitLoss ?? 0;
+      const pl = Number(t.profitLoss) || 0;
       totalPnL += pl;
       if (pl > 0) {
         totalProfit += pl;

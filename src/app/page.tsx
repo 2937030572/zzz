@@ -223,8 +223,8 @@ export default function TradingApp() {
     let deposit = 0;
     let withdraw = 0;
     for (const r of fundRecords) {
-      if (r.type === 'deposit') deposit += r.amount;
-      else withdraw += r.amount;
+      if (r.type === 'deposit') deposit += Number(r.amount) || 0;
+      else withdraw += Number(r.amount) || 0;
     }
     return { totalDeposit: deposit, totalWithdraw: withdraw };
   }, [fundRecords]);
