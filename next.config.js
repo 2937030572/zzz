@@ -1,7 +1,5 @@
-import type { NextConfig } from 'next';
-import path from 'path';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   // outputFileTracingRoot: path.resolve(__dirname, '../../'),
   /* config options here */
   allowedDevOrigins: ['*.dev.coze.site'],
@@ -16,4 +14,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
