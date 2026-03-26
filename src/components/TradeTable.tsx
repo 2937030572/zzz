@@ -61,19 +61,22 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades, onEditTrade, onD
                   </TableCell>
                 </TableRow>
               ) : (
-                trades.map((trade) => (
+                trades.map((trade) => {
+                  const openAmt = (trade.openAmount != null && !isNaN(Number(trade.openAmount))) ? Number(trade.openAmount) : 0;
+                  const pl = (trade.profitLoss != null && !isNaN(Number(trade.profitLoss))) ? Number(trade.profitLoss) : 0;
+                  return (
                   <TableRow key={trade.id} className="hover:bg-cyan-500/5 border-cyan-500/10">
-                    <TableCell className="font-medium text-white">{trade.symbol}</TableCell>
-                    <TableCell className="text-white">{trade.strategy}</TableCell>
-                    <TableCell className="text-cyan-300">{trade.position}%</TableCell>
+                    <TableCell className="font-medium text-white">{trade.symbol || '-'}</TableCell>
+                    <TableCell className="text-white">{trade.strategy || '-'}</TableCell>
+                    <TableCell className="text-cyan-300">{trade.position || 0}%</TableCell>
                     <TableCell className="font-semibold text-cyan-400">
-                      ${(trade.openAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${openAmt.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell className="text-gray-400">{trade.date} {trade.openTime}</TableCell>
-                    <TableCell className="text-white">{getCloseReasonComponent(trade.closeReason, trade.remark)}</TableCell>
-                    <TableCell className={`font-semibold ${(trade.profitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {(trade.profitLoss || 0) >= 0 ? '+' : ''}
-                      ${(trade.profitLoss || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <TableCell className="text-white">{getCloseReasonComponent(trade.closeReason || 'profit', trade.remark)}</TableCell>
+                    <TableCell className={`font-semibold ${pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {pl >= 0 ? '+' : ''}
+                      ${pl.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell>
                       {trade.isClosed ? (
@@ -107,7 +110,8 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades, onEditTrade, onD
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>
