@@ -380,7 +380,9 @@ export default function TradingApp() {
         const dateObj = new Date(item.date);
         const dateLabel = isNaN(dateObj.getTime()) ? item.date : dateObj.toLocaleDateString('zh-CN');
         return { date: dateLabel, value };
-      });
+      })
+      // 最终防御：确保传给 recharts 的每个数据点都是合法的数字和字符串
+      .filter((item) => typeof item.value === 'number' && !isNaN(item.value) && typeof item.date === 'string' && item.date !== '');
   }, [equityHistory, fundRecords]);
 
   // 根据日期范围过滤交易
