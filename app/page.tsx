@@ -15,41 +15,22 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Trash2, MoreVertical, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useTradingData } from '@/hooks/useTradingData';
+import {
+  useTradingData,
+  type Trade,
+  type FundRecord,
+  type PositionType,
+  type VolumeTrend,
+  type BollContraction,
+  type BollWidth,
+  type Pattern,
+  type CloseReason,
+} from '@/hooks/useTradingData';
 import { toast } from 'sonner';
+import { fmt, fmtTick, formatTradeDateTime, getLevelColor, getCloseReasonText, todayStr, daysAgoStr } from '@/lib/utils';
 
 // 仓位选项：5% 到 50%，每个增加 5%
 const POSITION_OPTIONS = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
-
-type PositionType = 5 | 10 | 15 | 20 | 25 | 30 | 35 | 40 | 45 | 50;
-
-interface Trade {
-  id: string;
-  symbol: string; // 交易品种
-  strategy: string; // 入场策略
-  position: PositionType; // 仓位
-  openAmount: number; // 开仓金额
-  openTime: string; // 开仓时间
-  closeReason: 'profit' | 'loss' | 'other'; // 平仓原因
-  remark?: string; // 备注
-  profitLoss: number; // 盈亏金额
-  date: string; // 交易日期
-  isClosed: boolean; // 是否已平仓
-}
-
-interface FundRecord {
-  id: string;
-  type: 'deposit' | 'withdraw';
-  amount: number;
-  date: string;
-}
-
-interface Account {
-  id: number;
-  name: string;
-  created_at: string;
-  updated_at: string;
-}
 
 export default function TradingApp() {
   // 使用自定义 hook 管理交易数据
@@ -71,7 +52,7 @@ export default function TradingApp() {
   // 账户管理状态
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
   const [newAccountName, setNewAccountName] = useState<string>('');
-  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+  const [editingAccount, setEditingAccount] = useState<{ id: number; name: string } | null>(null);
   const [editAccountName, setEditAccountName] = useState<string>('');
   
   // 时间段统计卡片选择状态
@@ -98,23 +79,23 @@ export default function TradingApp() {
   const [position, setPosition] = useState<PositionType>(5);
   const [openAmount, setOpenAmount] = useState<number>(0);
   const [openDateTime, setOpenDateTime] = useState<string>(new Date().toISOString().slice(0, 16));
-  const [closeReason, setCloseReason] = useState<'profit' | 'loss' | 'other'>('profit');
+  const [closeReason, setCloseReason] = useState<CloseReason>('profit');
   const [remark, setRemark] = useState<string>('');
   const [profitLoss, setProfitLoss] = useState<string>('');
   const [isClosed, setIsClosed] = useState<boolean>(true);
 
   // 交易分级系统状态
-  const [volumeTrend, setVolumeTrend] = useState<'top_divergence' | 'bottom_divergence' | 'no_trend'>('no_trend');
-  const [bollContraction, setBollContraction] = useState<'1h' | '2h' | '4h_plus'>('1h');
-  const [bollWidth, setBollWidth] = useState<'converged' | 'not_converged'>('not_converged');
-  const [pattern, setPattern] = useState<'head_shoulders' | 'double_top_bottom' | 'triple_top_bottom' | 'triangle' | 'cup_handle' | 'channel' | 'none'>('none');
+  const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>('no_trend');
+  const [bollContraction, setBollContraction] = useState<BollContraction>('1h');
+  const [bollWidth, setBollWidth] = useState<BollWidth>('not_converged');
+  const [pattern, setPattern] = useState<Pattern>('none');
 
   // 日期筛选状态
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
 
   // 编辑相关状态
-  const [editingTrade, setEditingTrade] = useState<any | null>(null);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   // 计算交易级别
@@ -194,41 +175,9 @@ export default function TradingApp() {
 
   // 快捷日期选择处理函数
   const handleQuickDateFilter = useCallback((type: 'week' | 'month' | '3month' | 'halfYear' | 'year') => {
-    const today = new Date();
-    const formatDate = (date: Date) => date.toISOString().split('T')[0];
-
-    switch (type) {
-      case 'week':
-        const weekAgo = new Date(today);
-        weekAgo.setDate(today.getDate() - 7);
-        setFilterStartDate(formatDate(weekAgo));
-        setFilterEndDate(formatDate(today));
-        break;
-      case 'month':
-        const monthAgo = new Date(today);
-        monthAgo.setDate(today.getDate() - 30);
-        setFilterStartDate(formatDate(monthAgo));
-        setFilterEndDate(formatDate(today));
-        break;
-      case '3month':
-        const threeMonthAgo = new Date(today);
-        threeMonthAgo.setDate(today.getDate() - 90);
-        setFilterStartDate(formatDate(threeMonthAgo));
-        setFilterEndDate(formatDate(today));
-        break;
-      case 'halfYear':
-        const halfYearAgo = new Date(today);
-        halfYearAgo.setDate(today.getDate() - 180);
-        setFilterStartDate(formatDate(halfYearAgo));
-        setFilterEndDate(formatDate(today));
-        break;
-      case 'year':
-        const yearAgo = new Date(today);
-        yearAgo.setDate(today.getDate() - 365);
-        setFilterStartDate(formatDate(yearAgo));
-        setFilterEndDate(formatDate(today));
-        break;
-    }
+    const daysMap = { week: 7, month: 30, '3month': 90, halfYear: 180, year: 365 } as const;
+    setFilterStartDate(daysAgoStr(daysMap[type]));
+    setFilterEndDate(todayStr());
   }, []);
 
   // 计算开仓金额
@@ -559,7 +508,7 @@ export default function TradingApp() {
   }, [trades, balance, currentAccountId]);
 
   // 编辑交易记录
-  const handleEditTrade = useCallback((trade: any) => {
+  const handleEditTrade = useCallback((trade: Trade) => {
     setEditingTrade(trade);
     setSymbol(trade.symbol);
     setStrategy(trade.strategy);
@@ -645,15 +594,7 @@ export default function TradingApp() {
   }, [editingTrade, symbol, openDateTime, isClosed, profitLoss, balance, currentAccountId, closeReason, remark, position, strategy]);
 
   // 平仓原因显示
-  const getCloseReasonText = (reason: string, remark?: string) => {
-    if (reason === 'profit') return '正常止盈';
-    if (reason === 'loss') return '正常止损';
-    if (reason === 'other') return `其他原因 (${remark || '无备注'})`;
-    return reason;
-  };
-
-  // 获取带高亮的平仓原因组件
-  const getCloseReasonComponent = (reason: string, remark?: string) => {
+  const getCloseReasonComponent = useCallback((reason: string, remark?: string) => {
     if (reason === 'other' && remark) {
       return (
         <span>
@@ -662,31 +603,34 @@ export default function TradingApp() {
       );
     }
     return <span>{getCloseReasonText(reason, remark)}</span>;
-  };
+  }, []);
 
-  // 根据日期范围过滤交易
-  const getFilteredTrades = useCallback(() => {
+  // 根据日期范围过滤交易（useMemo 避免每次 render 重算）
+  const filteredTrades = useMemo(() => {
     if (!filterStartDate && !filterEndDate) return trades;
-    
-    return trades.filter(trade => {
-      const tradeDate = new Date(trade.date);
-      const start = filterStartDate ? new Date(filterStartDate) : null;
-      const end = filterEndDate ? new Date(filterEndDate) : null;
-      
-      if (start && end) {
-        return tradeDate >= start && tradeDate <= end;
-      }
-      if (start) {
-        return tradeDate >= start;
-      }
-      if (end) {
-        return tradeDate <= end;
-      }
+    return trades.filter((trade) => {
+      const tradeDate = trade.date;
+      if (filterStartDate && filterEndDate) return tradeDate >= filterStartDate && tradeDate <= filterEndDate;
+      if (filterStartDate) return tradeDate >= filterStartDate;
+      if (filterEndDate) return tradeDate <= filterEndDate;
       return true;
     });
   }, [trades, filterStartDate, filterEndDate]);
 
-  const filteredTrades = getFilteredTrades();
+  // 单次遍历计算所有统计数据（避免 JSX 里多次 filter+reduce）
+  const filteredStats = useMemo(() => {
+    let winTotal = 0, winCount = 0, lossTotal = 0, lossCount = 0;
+    for (const t of filteredTrades) {
+      const pl = Number(t.profitLoss) || 0;
+      if (pl > 0) { winTotal += pl; winCount++; }
+      else if (pl < 0) { lossTotal += pl; lossCount++; }
+    }
+    const total = winTotal + lossTotal;
+    const winRate = filteredTrades.length > 0
+      ? Math.round((winCount / filteredTrades.length) * 100)
+      : 0;
+    return { winTotal, winCount, lossTotal, lossCount, total, winRate };
+  }, [filteredTrades]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-zinc-950 to-black p-4 md:p-8 relative overflow-hidden">
@@ -826,7 +770,7 @@ export default function TradingApp() {
           </CardHeader>
           <CardContent className="pt-4 sm:pt-6">
             <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="text-3xl sm:text-4xl font-bold text-amber-400">${(balance || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="text-3xl sm:text-4xl font-bold text-amber-400">{fmt(balance)}</div>
               <div className="flex gap-2">
                 <Dialog open={isDepositDialogOpen} onOpenChange={setIsDepositDialogOpen}>
                   <DialogTrigger asChild>
@@ -911,11 +855,11 @@ export default function TradingApp() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded border border-green-500/30 bg-green-500/10 p-2 text-center">
                   <div className="text-xs text-green-400/70">累计入金</div>
-                  <div className="text-sm font-semibold text-green-400">${(totalDeposit || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div className="text-sm font-semibold text-green-400">{fmt(totalDeposit)}</div>
                 </div>
                 <div className="rounded border border-red-500/30 bg-red-500/10 p-2 text-center">
                   <div className="text-xs text-red-400/70">累计出金</div>
-                  <div className="text-sm font-semibold text-red-400">${(totalWithdraw || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div className="text-sm font-semibold text-red-400">{fmt(totalWithdraw)}</div>
                 </div>
               </div>
               
@@ -931,7 +875,7 @@ export default function TradingApp() {
                             {record.type === 'deposit' ? '入金' : '出金'}
                           </span>
                           <span className="text-xs text-white">
-                            ${(record.amount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {fmt(record.amount)}
                           </span>
                           <span className="text-xs text-gray-400">
                             {record.date}
@@ -1044,21 +988,21 @@ export default function TradingApp() {
                         <div className="rounded-lg border border-amber-500/20 bg-gray-800/60 p-3 text-center">
                           <div className="text-xs text-gray-400 mb-1">当前余额</div>
                           <div className="text-lg font-semibold text-amber-400">
-                          ${(balance || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                          {fmt(balance)}
                         </div>
                         </div>
                         <div className="rounded-lg border border-blue-500/20 bg-gray-800/60 p-3 text-center">
                           <div className="text-xs text-gray-400 mb-1">入金 / 出金</div>
                           <div className="text-base font-semibold">
-                            <span className="text-green-400">${(totalDeposit || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0 })}</span>
+                            <span className="text-green-400">{fmt(totalDeposit, { decimals: 0 })}</span>
                             <span className="text-gray-500 mx-1">/</span>
-                            <span className="text-red-400">${(totalWithdraw || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0 })}</span>
+                            <span className="text-red-400">{fmt(totalWithdraw, { decimals: 0 })}</span>
                           </div>
                         </div>
                         <div className="rounded-lg border border-purple-500/20 bg-gray-800/60 p-3 text-center">
                           <div className="text-xs text-gray-400 mb-1">累计盈利</div>
                           <div className={`text-lg font-semibold ${(totalProfitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {(totalProfitLoss || 0) >= 0 ? '+' : ''}{(totalProfitLoss || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                            {(totalProfitLoss || 0) >= 0 ? '+' : ''}{fmt(totalProfitLoss)}
                           </div>
                         </div>
                         <div className="rounded-lg border border-cyan-500/20 bg-gray-800/60 p-3 text-center">
@@ -1084,7 +1028,7 @@ export default function TradingApp() {
                               stroke="#9CA3AF" 
                               fontSize={12}
                               tickLine={false}
-                              tickFormatter={(value) => { const n = Number(value); return isNaN(n) ? '' : `$${n.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}`; }}
+                              tickFormatter={fmtTick}
                             />
                             <Tooltip 
                               contentStyle={{ 
@@ -1093,10 +1037,7 @@ export default function TradingApp() {
                                 borderRadius: '8px',
                                 color: '#F3F4F6'
                               }}
-                              formatter={(value: unknown) => {
-                                const n = Number(value);
-                                return [isNaN(n) ? '-' : `$${n.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`, '余额'];
-                              }}
+                              formatter={(value: unknown) => [fmt(value), '余额']}
                               labelFormatter={(label: string) => label}
                             />
                             <Line 
@@ -1314,13 +1255,13 @@ export default function TradingApp() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-green-400">
-                    ${filteredTrades.filter(t => (Number(t.profitLoss) || 0) > 0).reduce((sum, t) => sum + (Number(t.profitLoss) || 0), 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {fmt(filteredStats.winTotal)}
                   </div>
                   <div className="text-sm text-green-400/70">盈利金额</div>
                 </div>
                 <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-green-400">
-                    {filteredTrades.filter(t => (Number(t.profitLoss) || 0) > 0).length}
+                    {filteredStats.winCount}
                   </div>
                   <div className="text-sm text-green-400/70">盈利次数</div>
                 </div>
@@ -1333,13 +1274,13 @@ export default function TradingApp() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-red-400">
-                    ${filteredTrades.filter(t => (Number(t.profitLoss) || 0) < 0).reduce((sum, t) => sum + (Number(t.profitLoss) || 0), 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {fmt(filteredStats.lossTotal)}
                   </div>
                   <div className="text-sm text-red-400/70">亏损金额</div>
                 </div>
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-red-400">
-                    {filteredTrades.filter(t => (Number(t.profitLoss) || 0) < 0).length}
+                    {filteredStats.lossCount}
                   </div>
                   <div className="text-sm text-red-400/70">亏损次数</div>
                 </div>
@@ -1349,9 +1290,8 @@ export default function TradingApp() {
             {/* 总体统计 */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
-                <div className={`text-xl sm:text-2xl font-bold ${filteredTrades.reduce((sum, trade) => sum + (Number(trade.profitLoss) || 0), 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {filteredTrades.reduce((sum, trade) => sum + (Number(trade.profitLoss) || 0), 0) >= 0 ? '+' : ''}
-                  ${filteredTrades.reduce((sum, trade) => sum + (Number(trade.profitLoss) || 0), 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className={`text-xl sm:text-2xl font-bold ${filteredStats.total >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {filteredStats.total >= 0 ? '+' : ''}{fmt(filteredStats.total)}
                 </div>
                 <div className="text-xs sm:text-sm text-amber-500/60">总盈亏</div>
               </div>
@@ -1361,7 +1301,7 @@ export default function TradingApp() {
               </div>
               <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
                 <div className="text-xl sm:text-2xl font-bold text-amber-400">
-                  {filteredTrades.length > 0 ? Math.round((filteredTrades.filter(t => (Number(t.profitLoss) || 0) > 0).length / filteredTrades.length) * 100) : 0}%
+                  {filteredStats.winRate}%
                 </div>
                 <div className="text-xs sm:text-sm text-amber-500/60">胜率</div>
               </div>
@@ -1499,7 +1439,7 @@ export default function TradingApp() {
               <div className="space-y-2">
                 <Label className="text-amber-400">开仓金额</Label>
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-lg font-semibold text-amber-400">
-                  ${(Number(openAmount) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {fmt(openAmount)}
                 </div>
                 <p className="text-sm text-amber-500/60">开仓金额 = 仓位 × 资产余额</p>
               </div>
@@ -1625,7 +1565,7 @@ export default function TradingApp() {
               <div className="space-y-2">
                 <Label className="text-amber-400">开仓金额</Label>
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-lg font-semibold text-amber-400">
-                  ${(Number(openAmount) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {fmt(openAmount)}
                 </div>
               </div>
 
@@ -1726,21 +1666,17 @@ export default function TradingApp() {
                         return <p className="text-center text-amber-500/50 py-4">暂无其他原因的交易记录</p>;
                       }
                       return otherReasonTrades.slice(0, 15).map((trade, index) => (
-                        <div 
-                          key={trade.id} 
+                        <div key={trade.id} 
                           className={`p-3 rounded-lg border border-amber-500/20 bg-gray-800/50 ${index < Math.min(otherReasonTrades.length, 15) - 1 ? 'mb-2' : ''}`}
                         >
                           <div className="flex justify-between items-start mb-2">
                             <span className="font-semibold text-white">{trade.symbol}</span>
                             <span className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}${(Number(trade.profitLoss) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
                             </span>
                           </div>
                           <div className="text-sm text-gray-400 mb-1">
-                            {(() => {
-                              const [year, month, day] = trade.date.split('-');
-                              return `${year.slice(-2)}/${parseInt(month, 10)}/${parseInt(day, 10)} ${trade.openTime}`;
-                            })()}
+                            {formatTradeDateTime(trade.date, trade.openTime)}
                           </div>
                           <div className="text-sm">
                             <span className="text-gray-400">原因：</span>
@@ -1778,42 +1714,18 @@ export default function TradingApp() {
                     </TableRow>
                   ) : (
                     trades.map((trade) => {
-                      // 格式化日期时间：年/月/日 时间（精简格式）
-                      const formatDateTime = (date: string, time: string) => {
-                        const [year, month, day] = date.split('-');
-                        const shortYear = year.slice(-2); // 取后两位
-                        const shortMonth = parseInt(month, 10).toString(); // 去掉前导零
-                        const shortDay = parseInt(day, 10).toString(); // 去掉前导零
-                        return `${shortYear}/${shortMonth}/${shortDay} ${time}`;
-                      };
-                      
                       return (
                         <TableRow 
                           key={trade.id} 
                           className="hover:bg-amber-500/5 border-amber-500/10"
                         >
                           <TableCell className="font-medium text-white">{trade.symbol}</TableCell>
-                          <TableCell className="text-gray-300">{formatDateTime(trade.date, trade.openTime)}</TableCell>
+                          <TableCell className="text-gray-300">{formatTradeDateTime(trade.date, trade.openTime)}</TableCell>
                           <TableCell className="text-white">
                             {(() => {
                               const parts = trade.strategy.split('/');
                               const level = parts[0];
                               const rest = parts.slice(1).join('/');
-                              
-                              // 根据级别设置颜色
-                              const getLevelColor = (lvl: string) => {
-                                switch (lvl) {
-                                  case 'A+': return 'text-yellow-400 font-bold drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]';
-                                  case 'A': return 'text-green-400 font-bold drop-shadow-[0_0_8px_rgba(74,222,128,0.6)]';
-                                  case 'A-': return 'text-amber-400 font-bold drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]';
-                                  case 'B+': return 'text-blue-400 font-bold drop-shadow-[0_0_8px_rgba(96,165,250,0.6)]';
-                                  case 'B': return 'text-indigo-400 font-bold drop-shadow-[0_0_8px_rgba(129,140,248,0.6)]';
-                                  case 'B-': return 'text-purple-400 font-bold drop-shadow-[0_0_8px_rgba(192,132,252,0.6)]';
-                                  case 'C': return 'text-gray-400 font-bold';
-                                  default: return 'text-white font-bold';
-                                }
-                              };
-                              
                               return (
                                 <>
                                   <span className={getLevelColor(level)}>{level}</span>
@@ -1823,9 +1735,9 @@ export default function TradingApp() {
                             })()}
                           </TableCell>
                           <TableCell className="text-amber-300">{trade.position}%</TableCell>
-                          <TableCell className="font-semibold text-amber-400">${(Number(trade.openAmount) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="font-semibold text-amber-400">{fmt(trade.openAmount)}</TableCell>
                           <TableCell className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}${(Number(trade.profitLoss) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
                           </TableCell>
                           <TableCell>
                             {trade.isClosed ? (

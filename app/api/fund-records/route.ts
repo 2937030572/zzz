@@ -120,11 +120,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Fund record ID is required' }, { status: 400 });
     }
 
-    // 获取要删除的记录
+    // 获取要删除的记录，同时验证归属账户（防止跨账户操作）
     const { data: record, error: recordError } = await supabase
       .from('fund_records')
       .select('*')
       .eq('id', id)
+      .eq('account_id', targetAccountId)
       .single();
 
     if (recordError) {
