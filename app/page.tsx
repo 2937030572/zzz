@@ -325,38 +325,23 @@ export default function TradingApp() {
   const handleDeleteFundRecord = useCallback(async (id: string) => {
     try {
       const record = fundRecords.find(r => r.id === id);
-      if (!record) return;
+      if (!record) { alert('前端找不到该记录，id=' + id); return; }
 
-      // 前端余额校验（Number() 强转防止 string 相减变 NaN）
-      const currentBalance = Number(balance) || 0;
-      const recordAmount = Number(record.amount) || 0;
-      const estimatedBalance = record.type === 'deposit'
-        ? currentBalance - recordAmount
-        : currentBalance + recordAmount;
+      console.log('[handleDeleteFundRecord] 开始删除', id, 'balance=', balance, 'record=', record);
 
-      if (record.type === 'deposit' && estimatedBalance < 0) {
-        toast.error('删除此入金记录会导致余额为负数，无法删除');
-        return;
-      }
-
-      // 删除记录（后端会自动更新余额并返回新的余额）
+      // 删除记录（后端会实时重算余额并返回）
       const deleteRes = await api.fundRecords.delete(id, currentAccountId);
+      console.log('[handleDeleteFundRecord] 后端响应:', deleteRes);
 
       // 使用后端返回的余额值
-      const updatedBalance = deleteRes.balance ?? estimatedBalance;
-      setBalance(Number(updatedBalance) || 0);
-
+      setBalance(Number(deleteRes.balance) || 0);
       setFundRecords(prev => prev.filter(r => r.id !== id));
       toast.success('记录删除成功');
     } catch (error: any) {
       console.error('Failed to delete fund record:', error);
       const msg = error?.message || '未知错误';
-      // 把英文后端错误翻译成中文
-      if (msg.includes('Insufficient balance')) {
-        toast.error('删除此记录会导致余额为负数，无法删除');
-      } else {
-        toast.error('删除出入金记录失败：' + msg);
-      }
+      alert('删除出入金记录失败：' + msg);
+      toast.error('删除出入金记录失败：' + msg);
     }
   }, [fundRecords, balance, currentAccountId]);
 

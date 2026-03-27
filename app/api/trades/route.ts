@@ -1,17 +1,11 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
 
-/** 从 fund_records + trades 实时计算账户真实余额（不依赖 balance 快照，避免历史脏数据） */
-async function calcRealBalance(accountId: number): Promise<number> {
+/** 从 fund_records + trades 实时计算真实余额（不加 account_id 过滤，兼容历史 null 数据） */
+async function calcRealBalance(): Promise<number> {
   const [fundsRes, tradesRes] = await Promise.all([
-    supabase
-      .from('fund_records')
-      .select('type, amount')
-      .or(`account_id.eq.${accountId},account_id.is.null`),
-    supabase
-      .from('trades')
-      .select('profit_loss')
-      .or(`account_id.eq.${accountId},account_id.is.null`),
+    supabase.from('fund_records').select('type, amount'),
+    supabase.from('trades').select('profit_loss'),
   ]);
   if (fundsRes.error) throw fundsRes.error;
   if (tradesRes.error) throw tradesRes.error;
@@ -27,19 +21,12 @@ async function calcRealBalance(accountId: number): Promise<number> {
   return balance;
 }
 
-/** 同步 balance 快照（upsert account_id 对应的行） */
+/** 同步 balance 快照（直接 update account_id 对应的行） */
 async function syncBalanceSnapshot(accountId: number, newBalance: number): Promise<void> {
-  const { data: existing } = await supabase
+  await supabase
     .from('balance')
-    .select('id')
-    .eq('account_id', accountId)
-    .single();
-
-  if (existing) {
-    await supabase.from('balance').update({ amount: String(newBalance) }).eq('account_id', accountId);
-  } else {
-    await supabase.from('balance').insert({ amount: String(newBalance), account_id: accountId });
-  }
+    .update({ amount: String(newBalance) })
+    .eq('account_id', accountId);
 }
 
 export async function GET(request: Request) {
@@ -247,7 +234,7 @@ export async function PUT(request: Request) {
 
     // 更新后实时重算真实余额（避免依赖 balance 快照脏数据）
     const numericAccountId = Number(targetAccountId) || 1;
-    const newBalance = await calcRealBalance(numericAccountId);
+    const newBalance = await calcRealBalance();
     await syncBalanceSnapshot(numericAccountId, newBalance);
 
     return NextResponse.json({
@@ -296,7 +283,7 @@ export async function DELETE(request: Request) {
     if (deleteError) throw deleteError;
 
     // 删除后实时重算真实余额（避免依赖 balance 快照脏数据）
-    const newBalance = await calcRealBalance(Number(targetAccountId) || 1);
+    const newBalance = await calcRealBalance();
     await syncBalanceSnapshot(Number(targetAccountId) || 1, newBalance);
 
     return NextResponse.json({ success: true, balance: newBalance });
