@@ -1084,7 +1084,7 @@ export default function TradingApp() {
                               stroke="#9CA3AF" 
                               fontSize={12}
                               tickLine={false}
-                              tickFormatter={(value) => `$${value}`}
+                              tickFormatter={(value) => { const n = Number(value); return isNaN(n) ? '' : `$${n.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}`; }}
                             />
                             <Tooltip 
                               contentStyle={{ 
@@ -1093,10 +1093,10 @@ export default function TradingApp() {
                                 borderRadius: '8px',
                                 color: '#F3F4F6'
                               }}
-                              formatter={(value: number) => [
-                                `$${value.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`,
-                                '余额'
-                              ]}
+                              formatter={(value: unknown) => {
+                                const n = Number(value);
+                                return [isNaN(n) ? '-' : `$${n.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`, '余额'];
+                              }}
                               labelFormatter={(label: string) => label}
                             />
                             <Line 
@@ -1140,8 +1140,8 @@ export default function TradingApp() {
                   });
                   
                   const count = periodTrades.length;
-                  const totalPL = periodTrades.reduce((sum, t) => sum + t.profitLoss, 0);
-                  const wins = periodTrades.filter(t => t.profitLoss > 0).length;
+                  const totalPL = periodTrades.reduce((sum, t) => sum + (Number(t.profitLoss) || 0), 0);
+                  const wins = periodTrades.filter(t => (Number(t.profitLoss) || 0) > 0).length;
                   const winRate = count > 0 ? Math.round((wins / count) * 100) : 0;
                   
                   return { count, totalPL, winRate };
@@ -1215,7 +1215,7 @@ export default function TradingApp() {
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-400">盈亏:</span>
                           <span className={`font-medium ${stats.totalPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {stats.totalPL >= 0 ? '+' : ''}{stats.totalPL.toFixed(2)}
+                            {stats.totalPL >= 0 ? '+' : ''}{(Number(stats.totalPL) || 0).toFixed(2)}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
@@ -1314,13 +1314,13 @@ export default function TradingApp() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-green-400">
-                    ${filteredTrades.filter(t => t.profitLoss > 0).reduce((sum, t) => sum + t.profitLoss, 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${filteredTrades.filter(t => (Number(t.profitLoss) || 0) > 0).reduce((sum, t) => sum + (Number(t.profitLoss) || 0), 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div className="text-sm text-green-400/70">盈利金额</div>
                 </div>
                 <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-green-400">
-                    {filteredTrades.filter(t => t.profitLoss > 0).length}
+                    {filteredTrades.filter(t => (Number(t.profitLoss) || 0) > 0).length}
                   </div>
                   <div className="text-sm text-green-400/70">盈利次数</div>
                 </div>
@@ -1333,13 +1333,13 @@ export default function TradingApp() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-red-400">
-                    ${filteredTrades.filter(t => t.profitLoss < 0).reduce((sum, t) => sum + t.profitLoss, 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${filteredTrades.filter(t => (Number(t.profitLoss) || 0) < 0).reduce((sum, t) => sum + (Number(t.profitLoss) || 0), 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div className="text-sm text-red-400/70">亏损金额</div>
                 </div>
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
                   <div className="text-2xl font-bold text-red-400">
-                    {filteredTrades.filter(t => t.profitLoss < 0).length}
+                    {filteredTrades.filter(t => (Number(t.profitLoss) || 0) < 0).length}
                   </div>
                   <div className="text-sm text-red-400/70">亏损次数</div>
                 </div>
@@ -1349,9 +1349,9 @@ export default function TradingApp() {
             {/* 总体统计 */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
-                <div className={`text-xl sm:text-2xl font-bold ${filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0) >= 0 ? '+' : ''}
-                  ${filteredTrades.reduce((sum, trade) => sum + trade.profitLoss, 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className={`text-xl sm:text-2xl font-bold ${filteredTrades.reduce((sum, trade) => sum + (Number(trade.profitLoss) || 0), 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {filteredTrades.reduce((sum, trade) => sum + (Number(trade.profitLoss) || 0), 0) >= 0 ? '+' : ''}
+                  ${filteredTrades.reduce((sum, trade) => sum + (Number(trade.profitLoss) || 0), 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <div className="text-xs sm:text-sm text-amber-500/60">总盈亏</div>
               </div>
@@ -1361,7 +1361,7 @@ export default function TradingApp() {
               </div>
               <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
                 <div className="text-xl sm:text-2xl font-bold text-amber-400">
-                  {filteredTrades.length > 0 ? Math.round((filteredTrades.filter(t => t.profitLoss > 0).length / filteredTrades.length) * 100) : 0}%
+                  {filteredTrades.length > 0 ? Math.round((filteredTrades.filter(t => (Number(t.profitLoss) || 0) > 0).length / filteredTrades.length) * 100) : 0}%
                 </div>
                 <div className="text-xs sm:text-sm text-amber-500/60">胜率</div>
               </div>
@@ -1499,7 +1499,7 @@ export default function TradingApp() {
               <div className="space-y-2">
                 <Label className="text-amber-400">开仓金额</Label>
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-lg font-semibold text-amber-400">
-                  ${openAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(Number(openAmount) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-sm text-amber-500/60">开仓金额 = 仓位 × 资产余额</p>
               </div>
@@ -1625,7 +1625,7 @@ export default function TradingApp() {
               <div className="space-y-2">
                 <Label className="text-amber-400">开仓金额</Label>
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-lg font-semibold text-amber-400">
-                  ${openAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(Number(openAmount) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
 
@@ -1732,8 +1732,8 @@ export default function TradingApp() {
                         >
                           <div className="flex justify-between items-start mb-2">
                             <span className="font-semibold text-white">{trade.symbol}</span>
-                            <span className={`font-semibold ${trade.profitLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {trade.profitLoss >= 0 ? '+' : ''}${trade.profitLoss.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}${(Number(trade.profitLoss) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           </div>
                           <div className="text-sm text-gray-400 mb-1">
@@ -1823,9 +1823,9 @@ export default function TradingApp() {
                             })()}
                           </TableCell>
                           <TableCell className="text-amber-300">{trade.position}%</TableCell>
-                          <TableCell className="font-semibold text-amber-400">${trade.openAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                          <TableCell className={`font-semibold ${trade.profitLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {trade.profitLoss >= 0 ? '+' : ''}${trade.profitLoss.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <TableCell className="font-semibold text-amber-400">${(Number(trade.openAmount) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                          <TableCell className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}${(Number(trade.profitLoss) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </TableCell>
                           <TableCell>
                             {trade.isClosed ? (
