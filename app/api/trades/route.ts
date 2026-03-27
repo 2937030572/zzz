@@ -306,8 +306,9 @@ export async function DELETE(request: Request) {
       
       newBalance = currentBalance - profitLoss;
 
+      // 余额不允许为负数（删除盈利记录时可能导致余额不足）
       if (newBalance < 0) {
-        newBalance = 0; // 防止负数
+        return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
       }
 
       if (balanceData) {

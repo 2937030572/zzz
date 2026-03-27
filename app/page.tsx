@@ -32,6 +32,30 @@ import { fmt, fmtTick, formatTradeDateTime, getLevelColor, getCloseReasonText, t
 // 仓位选项：5% 到 50%，每个增加 5%
 const POSITION_OPTIONS = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
 
+// BOLL收缩 / 形态文本映射（模块级常量，避免每次 render 重建对象）
+const BOLL_CONTRACTION_TEXT: Record<string, string> = {
+  '1h': '1h收缩',
+  '2h': '2h收缩',
+  '4h_plus': '4h+收缩',
+};
+const BOLL_WIDTH_TEXT: Record<string, string> = {
+  'converged': '粘合',
+  'not_converged': '未粘合',
+};
+const PATTERN_TEXT: Record<string, string> = {
+  'head_shoulders': '头肩顶底',
+  'double_top_bottom': '双顶底',
+  'triple_top_bottom': '三重顶底',
+  'triangle': '三角',
+  'cup_handle': '杯柄',
+  'channel': '通道',
+};
+
+/** 将 date + openTime 合并为 datetime-local 格式（模块级纯函数） */
+function combineDateTime(date: string, time: string): string {
+  return `${date}T${time}`;
+}
+
 export default function TradingApp() {
   // 使用自定义 hook 管理交易数据
   const {
@@ -77,7 +101,8 @@ export default function TradingApp() {
   const [symbol, setSymbol] = useState<string>('');
   const [strategy, setStrategy] = useState<string>('');
   const [position, setPosition] = useState<PositionType>(5);
-  const [openAmount, setOpenAmount] = useState<number>(0);
+  // openAmount 是纯派生值，用 useMemo 而非 state
+  const openAmount = useMemo(() => (Number(balance) * position) / 100, [balance, position]);
   const [openDateTime, setOpenDateTime] = useState<string>(new Date().toISOString().slice(0, 16));
   const [closeReason, setCloseReason] = useState<CloseReason>('profit');
   const [remark, setRemark] = useState<string>('');
@@ -98,8 +123,8 @@ export default function TradingApp() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // 计算交易级别
-  const calculateTradeLevel = useCallback((): { level: string; color: string; description: string; suggestion: string } => {
+  // 计算交易级别（useMemo，只在相关 state 变化时重算）
+  const tradeLevel = useMemo((): { level: string; color: string; description: string; suggestion: string } => {
     // 1. 检查量能背离
     if (volumeTrend === 'no_trend') {
       return {
@@ -170,21 +195,12 @@ export default function TradingApp() {
     }
   }, [volumeTrend, bollContraction, bollWidth, pattern]);
 
-  // 获取交易级别信息
-  const tradeLevel = calculateTradeLevel();
-
   // 快捷日期选择处理函数
   const handleQuickDateFilter = useCallback((type: 'week' | 'month' | '3month' | 'halfYear' | 'year') => {
     const daysMap = { week: 7, month: 30, '3month': 90, halfYear: 180, year: 365 } as const;
     setFilterStartDate(daysAgoStr(daysMap[type]));
     setFilterEndDate(todayStr());
   }, []);
-
-  // 计算开仓金额
-  useEffect(() => {
-    const amount = (balance * position) / 100;
-    setOpenAmount(amount);
-  }, [balance, position]);
 
   // 账户管理函数
   const handleCreateAccount = useCallback(async () => {
@@ -259,8 +275,11 @@ export default function TradingApp() {
     if (!amount || amount <= 0) return;
     if (!fundDate) return;
 
+    // Number() 强转防止 balance 是 string
+    const currentBalance = Number(balance) || 0;
+
     // 出金时检查余额是否足够
-    if (type === 'withdraw' && amount > balance) {
+    if (type === 'withdraw' && amount > currentBalance) {
       toast.error('余额不足，无法出金');
       return;
     }
@@ -275,15 +294,14 @@ export default function TradingApp() {
       });
 
       // 从响应中获取更新后的余额
-      const updatedBalance = recordRes.balance || (type === 'deposit' ? balance + amount : balance - amount);
+      const fallbackBalance = type === 'deposit' ? currentBalance + amount : currentBalance - amount;
+      const updatedBalance = recordRes.balance ?? fallbackBalance;
 
-      // 更新余额状态
-      setBalance(updatedBalance);
+      setBalance(Number(updatedBalance) || 0);
 
       // 更新出入金记录列表
       setFundRecords(prev => [recordRes.record, ...prev]);
 
-      // 更新资产历史
       setFundAmount('');
       setFundDate(new Date().toISOString().split('T')[0]);
       if (type === 'deposit') {
@@ -294,7 +312,12 @@ export default function TradingApp() {
       toast.success(type === 'deposit' ? '入金成功' : '出金成功');
     } catch (error: any) {
       console.error('Failed to add fund record:', error);
-      toast.error('添加出入金记录失败：' + (error?.message || '未知错误'));
+      const msg = error?.message || '未知错误';
+      if (msg.includes('Insufficient balance')) {
+        toast.error('余额不足，无法出金');
+      } else {
+        toast.error('添加出入金记录失败：' + msg);
+      }
     }
   }, [fundAmount, fundDate, balance, currentAccountId]);
 
@@ -304,9 +327,14 @@ export default function TradingApp() {
       const record = fundRecords.find(r => r.id === id);
       if (!record) return;
 
-      // 检查删除后余额是否为负数
-      const newBalance = record.type === 'deposit' ? balance - (record.amount || 0) : balance + (record.amount || 0);
-      if (record.type === 'deposit' && newBalance < 0) {
+      // 前端余额校验（Number() 强转防止 string 相减变 NaN）
+      const currentBalance = Number(balance) || 0;
+      const recordAmount = Number(record.amount) || 0;
+      const estimatedBalance = record.type === 'deposit'
+        ? currentBalance - recordAmount
+        : currentBalance + recordAmount;
+
+      if (record.type === 'deposit' && estimatedBalance < 0) {
         toast.error('删除此入金记录会导致余额为负数，无法删除');
         return;
       }
@@ -315,15 +343,20 @@ export default function TradingApp() {
       const deleteRes = await api.fundRecords.delete(id, currentAccountId);
 
       // 使用后端返回的余额值
-      const updatedBalance = deleteRes.balance ?? newBalance;
-      setBalance(updatedBalance);
+      const updatedBalance = deleteRes.balance ?? estimatedBalance;
+      setBalance(Number(updatedBalance) || 0);
 
-      // 删除记录
       setFundRecords(prev => prev.filter(r => r.id !== id));
       toast.success('记录删除成功');
     } catch (error: any) {
       console.error('Failed to delete fund record:', error);
-      toast.error('删除出入金记录失败：' + (error?.message || '未知错误'));
+      const msg = error?.message || '未知错误';
+      // 把英文后端错误翻译成中文
+      if (msg.includes('Insufficient balance')) {
+        toast.error('删除此记录会导致余额为负数，无法删除');
+      } else {
+        toast.error('删除出入金记录失败：' + msg);
+      }
     }
   }, [fundRecords, balance, currentAccountId]);
 
@@ -351,7 +384,7 @@ export default function TradingApp() {
       }
 
       // 检查亏损是否会导致余额为负数
-      if (pl < 0 && balance + pl < 0) {
+      if (pl < 0 && Number(balance) + pl < 0) {
         toast.error('余额不足，无法添加此亏损交易');
         return;
       }
@@ -368,32 +401,13 @@ export default function TradingApp() {
         parts.push('底背离');
       }
       
-      // BOLL收缩时长
-      const bollContractionText = {
-        '1h': '1h收缩',
-        '2h': '2h收缩',
-        '4h_plus': '4h+收缩'
-      }[bollContraction];
-      parts.push(bollContractionText);
-      
-      // 布林带宽度
-      const bollWidthText = {
-        'converged': '粘合',
-        'not_converged': '未粘合'
-      }[bollWidth];
-      parts.push(bollWidthText);
+      // BOLL收缩时长 & 布林带宽度（使用模块级常量）
+      parts.push(BOLL_CONTRACTION_TEXT[bollContraction] ?? bollContraction);
+      parts.push(BOLL_WIDTH_TEXT[bollWidth] ?? bollWidth);
       
       // 形态：只有有形态才显示
       if (pattern !== 'none') {
-        const patternText = {
-          'head_shoulders': '头肩顶底',
-          'double_top_bottom': '双顶底',
-          'triple_top_bottom': '三重顶底',
-          'triangle': '三角',
-          'cup_handle': '杯柄',
-          'channel': '通道'
-        }[pattern];
-        parts.push(patternText);
+        parts.push(PATTERN_TEXT[pattern] ?? pattern);
       }
 
       const strategyText = parts.join('/');
@@ -418,26 +432,16 @@ export default function TradingApp() {
         accountId: currentAccountId,
       });
 
-      // 从响应中获取更新后的余额
-      const updatedBalance = tradeRes.balance || (balance + pl);
-      setBalance(updatedBalance);
+      // 从响应中获取更新后的余额（用 ?? 而非 ||，避免余额为 0 时取错值）
+      const currentBalance = Number(balance) || 0;
+      const updatedBalance = tradeRes.balance ?? (currentBalance + pl);
+      setBalance(Number(updatedBalance) || 0);
 
       // 添加交易记录
       setTrades(prev => [tradeRes.trade, ...prev]);
 
       // 重置表单
-      setSymbol('');
-      setStrategy('');
-      setPosition(5);
-      setVolumeTrend('no_trend');
-      setBollContraction('1h');
-      setBollWidth('not_converged');
-      setPattern('none');
-      setCloseReason('profit');
-      setRemark('');
-      setProfitLoss('');
-      setOpenDateTime(new Date().toISOString().slice(0, 16));
-      setIsClosed(true);
+      resetTradeForm();
       setIsTradeDialogOpen(false);
       toast.success('交易记录添加成功');
     } catch (error: any) {
@@ -484,9 +488,12 @@ export default function TradingApp() {
       const tradeToDelete = trades.find(t => t.id === tradeId);
       if (!tradeToDelete) return;
 
-      // 检查删除盈利交易后余额是否为负数
-      const newBalance = balance - (tradeToDelete.profitLoss || 0);
-      if (tradeToDelete.profitLoss > 0 && newBalance < 0) {
+      // Number() 强转防止 balance 是 string 时相减变 NaN
+      const currentBalance = Number(balance) || 0;
+      const pl = Number(tradeToDelete.profitLoss) || 0;
+      const estimatedBalance = currentBalance - pl;
+
+      if (pl > 0 && estimatedBalance < 0) {
         toast.error('删除此盈利交易会导致余额为负数，无法删除');
         return;
       }
@@ -495,15 +502,19 @@ export default function TradingApp() {
       const deleteRes = await api.trades.delete(tradeId, currentAccountId);
 
       // 使用后端返回的余额值
-      const updatedBalance = deleteRes.balance ?? newBalance;
-      setBalance(updatedBalance);
+      const updatedBalance = deleteRes.balance ?? estimatedBalance;
+      setBalance(Number(updatedBalance) || 0);
 
-      // 删除记录
       setTrades(prev => prev.filter(t => t.id !== tradeId));
       toast.success('交易记录删除成功');
     } catch (error: any) {
       console.error('Failed to delete trade:', error);
-      toast.error('删除交易记录失败：' + (error?.message || '未知错误'));
+      const msg = error?.message || '未知错误';
+      if (msg.includes('Insufficient balance')) {
+        toast.error('删除此交易会导致余额为负数，无法删除');
+      } else {
+        toast.error('删除交易记录失败：' + msg);
+      }
     }
   }, [trades, balance, currentAccountId]);
 
@@ -521,11 +532,6 @@ export default function TradingApp() {
     setIsEditDialogOpen(true);
   }, []);
 
-  // 将 date 和 openTime 合并为 datetime-local 格式
-  const combineDateTime = (date: string, time: string) => {
-    return `${date}T${time}`;
-  };
-
   // 保存编辑
   const handleSaveEdit = useCallback(async () => {
     if (!editingTrade || !symbol || !openDateTime) return;
@@ -537,18 +543,19 @@ export default function TradingApp() {
     }
 
     try {
-      const oldProfitLoss = editingTrade.profitLoss || 0;
+      const oldProfitLoss = Number(editingTrade.profitLoss) || 0;
+      const currentBalance = Number(balance) || 0;
 
       // 计算新盈亏（如果填写了）
       let newProfitLoss = oldProfitLoss;
-      let newBalance = balance;
+      let estimatedBalance = currentBalance;
 
       if (profitLoss && isClosed) {
         newProfitLoss = Number(profitLoss);
 
         // 检查编辑后余额是否为负数
-        newBalance = balance - oldProfitLoss + newProfitLoss;
-        if (newBalance < 0) {
+        estimatedBalance = currentBalance - oldProfitLoss + newProfitLoss;
+        if (estimatedBalance < 0) {
           toast.error('修改后的盈亏会导致余额为负数，无法保存');
           return;
         }
@@ -577,21 +584,43 @@ export default function TradingApp() {
       );
 
       // 从响应中获取更新后的余额
-      const updatedBalance = updatedTradeRes.balance ?? newBalance;
-      setBalance(updatedBalance);
+      const updatedBalance = updatedTradeRes.balance ?? estimatedBalance;
+      setBalance(Number(updatedBalance) || 0);
 
       // 更新交易列表
       setTrades(prev => prev.map(t => t.id === editingTrade.id ? updatedTradeRes.trade : t));
 
-      // 关闭对话框
+      // 关闭对话框并重置表单（防止污染添加表单）
       setIsEditDialogOpen(false);
       setEditingTrade(null);
+      resetTradeForm();
       toast.success('交易记录更新成功');
     } catch (error: any) {
       console.error('Failed to save trade:', error);
-      toast.error('保存交易记录失败：' + (error?.message || '未知错误'));
+      const msg = error?.message || '未知错误';
+      if (msg.includes('Insufficient balance')) {
+        toast.error('修改后的盈亏会导致余额为负数，无法保存');
+      } else {
+        toast.error('保存交易记录失败：' + msg);
+      }
     }
   }, [editingTrade, symbol, openDateTime, isClosed, profitLoss, balance, currentAccountId, closeReason, remark, position, strategy]);
+
+  // 重置交易表单（添加和编辑共用）
+  const resetTradeForm = useCallback(() => {
+    setSymbol('');
+    setStrategy('');
+    setPosition(5);
+    setVolumeTrend('no_trend');
+    setBollContraction('1h');
+    setBollWidth('not_converged');
+    setPattern('none');
+    setCloseReason('profit');
+    setRemark('');
+    setProfitLoss('');
+    setOpenDateTime(new Date().toISOString().slice(0, 16));
+    setIsClosed(true);
+  }, []);
 
   // 平仓原因显示
   const getCloseReasonComponent = useCallback((reason: string, remark?: string) => {
@@ -631,6 +660,64 @@ export default function TradingApp() {
       : 0;
     return { winTotal, winCount, lossTotal, lossCount, total, winRate };
   }, [filteredTrades]);
+
+  // "其他原因总结"弹窗数据（useMemo，避免每次 render 重 filter）
+  const otherReasonTrades = useMemo(
+    () => trades.filter(t => t.closeReason === 'other' && t.remark).slice(0, 15),
+    [trades]
+  );
+
+  // 时间段统计卡片数据（useMemo，单次扫描，O(n)）
+  const periodStats = useMemo(() => {
+    return periodSelections.map(({ days }) => {
+      const startStr = daysAgoStr(days);
+      const endStr = todayStr();
+      let count = 0, totalPL = 0, wins = 0;
+      for (const t of trades) {
+        if (t.date >= startStr && t.date <= endStr) {
+          const pl = Number(t.profitLoss) || 0;
+          count++;
+          totalPL += pl;
+          if (pl > 0) wins++;
+        }
+      }
+      return { count, totalPL, winRate: count > 0 ? Math.round((wins / count) * 100) : 0 };
+    });
+  }, [trades, periodSelections]);
+
+  // 图表走势数据（useMemo，O(n) 前缀和，避免每个日期都重新 filter+reduce）
+  const chartData = useMemo(() => {
+    if (trades.length === 0 && fundRecords.length === 0) return null;
+
+    type DayAcc = { dep: number; wit: number; pl: number };
+    const dayMap = new Map<string, DayAcc>();
+
+    const getOrCreate = (d: string): DayAcc => {
+      let v = dayMap.get(d);
+      if (!v) { v = { dep: 0, wit: 0, pl: 0 }; dayMap.set(d, v); }
+      return v;
+    };
+
+    for (const r of fundRecords) {
+      const acc = getOrCreate(r.date);
+      if (r.type === 'deposit') acc.dep += Number(r.amount) || 0;
+      else acc.wit += Number(r.amount) || 0;
+    }
+    for (const t of trades) {
+      getOrCreate(t.date).pl += Number(t.profitLoss) || 0;
+    }
+
+    const sortedDates = Array.from(dayMap.keys()).sort();
+    let cumDep = 0, cumWit = 0, cumPL = 0;
+    const points = sortedDates.map(date => {
+      const { dep, wit, pl } = dayMap.get(date)!;
+      cumDep += dep; cumWit += wit; cumPL += pl;
+      return { date: date.slice(5), fullDate: date, balance: cumDep - cumWit + cumPL };
+    });
+
+    const returnRate = cumDep > 0 ? (cumPL / cumDep * 100).toFixed(2) : '0.00';
+    return { points, totalDep: cumDep, totalWit: cumWit, totalPL: cumPL, returnRate };
+  }, [trades, fundRecords]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-zinc-950 to-black p-4 md:p-8 relative overflow-hidden">
@@ -924,136 +1011,82 @@ export default function TradingApp() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="pt-4">
-                {(() => {
-                  // 计算资产走势数据
-                  // 收集所有日期点
-                  const allDates = new Set<string>();
-                  trades.forEach(t => allDates.add(t.date));
-                  fundRecords.forEach(r => allDates.add(r.date));
-                  
-                  if (allDates.size === 0) {
-                    return (
-                      <div className="text-center py-8 text-gray-400">
-                        暂无数据，请先添加交易或出入金记录
-                      </div>
-                    );
-                  }
-                  
-                  // 按日期排序
-                  const sortedDates = Array.from(allDates).sort();
-                  
-                  // 计算每个日期的累计值
-                  const chartData = sortedDates.map(date => {
-                    // 累计入金到该日期
-                    const depositToDate = fundRecords
-                      .filter(r => r.type === 'deposit' && r.date <= date)
-                      .reduce((sum, r) => sum + r.amount, 0);
-                    
-                    // 累计出金到该日期
-                    const withdrawToDate = fundRecords
-                      .filter(r => r.type === 'withdraw' && r.date <= date)
-                      .reduce((sum, r) => sum + r.amount, 0);
-                    
-                    // 累计盈亏到该日期
-                    const profitLossToDate = trades
-                      .filter(t => t.date <= date)
-                      .reduce((sum, t) => sum + t.profitLoss, 0);
-                    
-                    // 当时的余额 = 累计入金 - 累计出金 + 累计盈亏
-                    const balanceAtDate = depositToDate - withdrawToDate + profitLossToDate;
-                    
-                    return {
-                      date: date.slice(5), // 只显示 MM-DD
-                      fullDate: date,
-                      balance: balanceAtDate,
-                    };
-                  });
-                  
-                  // 计算统计数据
-                  const totalDeposit = fundRecords
-                    .filter(r => r.type === 'deposit')
-                    .reduce((sum, r) => sum + (r.amount || 0), 0);
-                  const totalWithdraw = fundRecords
-                    .filter(r => r.type === 'withdraw')
-                    .reduce((sum, r) => sum + (r.amount || 0), 0);
-                  const totalProfitLoss = trades.reduce((sum, t) => sum + (t.profitLoss || 0), 0);
-                  const returnRate = (totalDeposit || 0) > 0 
-      ? (totalProfitLoss / totalDeposit * 100).toFixed(2)
-      : '0.00';
-                  
-                  return (
-                    <>
-                      {/* 统计信息 */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                        <div className="rounded-lg border border-amber-500/20 bg-gray-800/60 p-3 text-center">
-                          <div className="text-xs text-gray-400 mb-1">当前余额</div>
-                          <div className="text-lg font-semibold text-amber-400">
+                {!chartData ? (
+                  <div className="text-center py-8 text-gray-400">
+                    暂无数据，请先添加交易或出入金记录
+                  </div>
+                ) : (
+                  <>
+                    {/* 统计信息 */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                      <div className="rounded-lg border border-amber-500/20 bg-gray-800/60 p-3 text-center">
+                        <div className="text-xs text-gray-400 mb-1">当前余额</div>
+                        <div className="text-lg font-semibold text-amber-400">
                           {fmt(balance)}
                         </div>
-                        </div>
-                        <div className="rounded-lg border border-blue-500/20 bg-gray-800/60 p-3 text-center">
-                          <div className="text-xs text-gray-400 mb-1">入金 / 出金</div>
-                          <div className="text-base font-semibold">
-                            <span className="text-green-400">{fmt(totalDeposit, { decimals: 0 })}</span>
-                            <span className="text-gray-500 mx-1">/</span>
-                            <span className="text-red-400">{fmt(totalWithdraw, { decimals: 0 })}</span>
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-purple-500/20 bg-gray-800/60 p-3 text-center">
-                          <div className="text-xs text-gray-400 mb-1">累计盈利</div>
-                          <div className={`text-lg font-semibold ${(totalProfitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {(totalProfitLoss || 0) >= 0 ? '+' : ''}{fmt(totalProfitLoss)}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-cyan-500/20 bg-gray-800/60 p-3 text-center">
-                          <div className="text-xs text-gray-400 mb-1">盈利率</div>
-                          <div className={`text-lg font-semibold ${Number(returnRate) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {Number(returnRate) >= 0 ? '+' : ''}{returnRate}%
-                          </div>
+                      </div>
+                      <div className="rounded-lg border border-blue-500/20 bg-gray-800/60 p-3 text-center">
+                        <div className="text-xs text-gray-400 mb-1">入金 / 出金</div>
+                        <div className="text-base font-semibold">
+                          <span className="text-green-400">{fmt(chartData.totalDep, { decimals: 0 })}</span>
+                          <span className="text-gray-500 mx-1">/</span>
+                          <span className="text-red-400">{fmt(chartData.totalWit, { decimals: 0 })}</span>
                         </div>
                       </div>
-                      
-                      {/* 走势图 */}
-                      <div className="h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                            <XAxis 
-                              dataKey="date" 
-                              stroke="#9CA3AF" 
-                              fontSize={12}
-                              tickLine={false}
-                            />
-                            <YAxis 
-                              stroke="#9CA3AF" 
-                              fontSize={12}
-                              tickLine={false}
-                              tickFormatter={fmtTick}
-                            />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: '#1F2937', 
-                                border: '1px solid rgba(245, 158, 11, 0.3)',
-                                borderRadius: '8px',
-                                color: '#F3F4F6'
-                              }}
-                              formatter={(value: unknown) => [fmt(value), '余额']}
-                              labelFormatter={(label: string) => label}
-                            />
-                            <Line 
-                              type="monotone" 
-                              dataKey="balance" 
-                              stroke="#F59E0B" 
-                              strokeWidth={2}
-                              dot={{ fill: '#F59E0B', strokeWidth: 2, r: 3 }}
-                              name="余额"
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
+                      <div className="rounded-lg border border-purple-500/20 bg-gray-800/60 p-3 text-center">
+                        <div className="text-xs text-gray-400 mb-1">累计盈利</div>
+                        <div className={`text-lg font-semibold ${chartData.totalPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {chartData.totalPL >= 0 ? '+' : ''}{fmt(chartData.totalPL)}
+                        </div>
                       </div>
-                    </>
-                  );
-                })()}
+                      <div className="rounded-lg border border-cyan-500/20 bg-gray-800/60 p-3 text-center">
+                        <div className="text-xs text-gray-400 mb-1">盈利率</div>
+                        <div className={`text-lg font-semibold ${Number(chartData.returnRate) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {Number(chartData.returnRate) >= 0 ? '+' : ''}{chartData.returnRate}%
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 走势图 */}
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData.points}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis
+                            dataKey="date"
+                            stroke="#9CA3AF"
+                            fontSize={12}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            stroke="#9CA3AF"
+                            fontSize={12}
+                            tickLine={false}
+                            tickFormatter={fmtTick}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#1F2937',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              borderRadius: '8px',
+                              color: '#F3F4F6'
+                            }}
+                            formatter={(value: unknown) => [fmt(value), '余额']}
+                            labelFormatter={(label: string) => label}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="balance"
+                            stroke="#F59E0B"
+                            strokeWidth={2}
+                            dot={{ fill: '#F59E0B', strokeWidth: 2, r: 3 }}
+                            name="余额"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </CollapsibleContent>
           </Card>
@@ -1069,25 +1102,6 @@ export default function TradingApp() {
             {/* 时间段统计卡片 */}
             <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {(() => {
-                const getPeriodStats = (days: number) => {
-                  const today = new Date();
-                  const startDate = new Date(today);
-                  startDate.setDate(today.getDate() - days);
-                  const startDateStr = startDate.toISOString().split('T')[0];
-                  const todayStr = today.toISOString().split('T')[0];
-                  
-                  const periodTrades = trades.filter(trade => {
-                    return trade.date >= startDateStr && trade.date <= todayStr;
-                  });
-                  
-                  const count = periodTrades.length;
-                  const totalPL = periodTrades.reduce((sum, t) => sum + (Number(t.profitLoss) || 0), 0);
-                  const wins = periodTrades.filter(t => (Number(t.profitLoss) || 0) > 0).length;
-                  const winRate = count > 0 ? Math.round((wins / count) * 100) : 0;
-                  
-                  return { count, totalPL, winRate };
-                };
-                
                 // 每个卡片的选项
                 const periodOptions = [
                   [
@@ -1113,24 +1127,24 @@ export default function TradingApp() {
                     { label: '三月', days: 89 },
                   ],
                 ];
-                
+
                 const getLabelByDays = (options: {label: string, days: number}[], days: number) => {
                   const found = options.find(o => o.days === days);
                   return found ? found.label : options[0].label;
                 };
-                
+
                 return periodSelections.map((selection, index) => {
                   const options = periodOptions[index];
                   const label = getLabelByDays(options, selection.days);
-                  const stats = getPeriodStats(selection.days);
-                  
+                  const stats = periodStats[index];
+
                   return (
-                    <div 
+                    <div
                       key={index}
                       className="rounded-lg border border-amber-500/20 bg-gray-800/60 p-3 text-center"
                     >
-                      <Select 
-                        value={String(selection.days)} 
+                      <Select
+                        value={String(selection.days)}
                         onValueChange={(value) => {
                           const newSelections = [...periodSelections];
                           newSelections[index] = { id: index, days: Number(value) };
@@ -1156,7 +1170,7 @@ export default function TradingApp() {
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-400">盈亏:</span>
                           <span className={`font-medium ${stats.totalPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {stats.totalPL >= 0 ? '+' : ''}{(Number(stats.totalPL) || 0).toFixed(2)}
+                            {stats.totalPL >= 0 ? '+' : ''}{fmt(stats.totalPL)}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
@@ -1506,7 +1520,10 @@ export default function TradingApp() {
         </Dialog>
 
         {/* 编辑交易记录对话框 */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) { setEditingTrade(null); resetTradeForm(); }
+        }}>
           <DialogContent className="border-amber-500/30 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle className="bg-gradient-to-r from-amber-400 to-blue-500 bg-clip-text text-transparent">编辑交易记录</DialogTitle>
@@ -1628,7 +1645,7 @@ export default function TradingApp() {
               <Button 
                 variant="outline"
                 className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                onClick={() => setIsEditDialogOpen(false)}
+                onClick={() => { setIsEditDialogOpen(false); setEditingTrade(null); resetTradeForm(); }}
               >
                 取消
               </Button>
@@ -1660,14 +1677,12 @@ export default function TradingApp() {
                     <DialogDescription className="text-blue-500/60">平仓原因为"其他原因"的交易记录</DialogDescription>
                   </DialogHeader>
                   <div className="py-4 space-y-3 max-h-[400px] overflow-y-auto">
-                    {(() => {
-                      const otherReasonTrades = trades.filter(t => t.closeReason === 'other' && t.remark);
-                      if (otherReasonTrades.length === 0) {
-                        return <p className="text-center text-amber-500/50 py-4">暂无其他原因的交易记录</p>;
-                      }
-                      return otherReasonTrades.slice(0, 15).map((trade, index) => (
+                    {otherReasonTrades.length === 0 ? (
+                      <p className="text-center text-amber-500/50 py-4">暂无其他原因的交易记录</p>
+                    ) : (
+                      otherReasonTrades.map((trade, index) => (
                         <div key={trade.id} 
-                          className={`p-3 rounded-lg border border-amber-500/20 bg-gray-800/50 ${index < Math.min(otherReasonTrades.length, 15) - 1 ? 'mb-2' : ''}`}
+                          className={`p-3 rounded-lg border border-amber-500/20 bg-gray-800/50 ${index < otherReasonTrades.length - 1 ? 'mb-2' : ''}`}
                         >
                           <div className="flex justify-between items-start mb-2">
                             <span className="font-semibold text-white">{trade.symbol}</span>
@@ -1683,17 +1698,17 @@ export default function TradingApp() {
                             <span className="bg-yellow-400 text-black font-semibold px-1 rounded">{trade.remark}</span>
                           </div>
                         </div>
-                      ));
-                    })()}
+                      ))
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>
             </div>
           </CardHeader>
           <CardContent>
-            <div className={`${trades.length > 15 ? 'max-h-[600px] overflow-y-auto' : ''} overflow-x-auto`}>
+            <div className={`${filteredTrades.length > 15 ? 'max-h-[600px] overflow-y-auto' : ''} overflow-x-auto`}>
               <Table>
-                <TableHeader className={trades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
+                <TableHeader className={filteredTrades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
                   <TableRow>
                     <TableHead className="text-amber-400">交易品种</TableHead>
                     <TableHead className="text-amber-400">开仓日期</TableHead>
@@ -1706,14 +1721,14 @@ export default function TradingApp() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {trades.length === 0 ? (
+                  {filteredTrades.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-amber-500/50">
                         暂无交易记录
                       </TableCell>
                     </TableRow>
                   ) : (
-                    trades.map((trade) => {
+                    filteredTrades.map((trade) => {
                       return (
                         <TableRow 
                           key={trade.id} 
