@@ -162,12 +162,11 @@ export async function PUT(request: Request) {
     const { id, profitLoss: newProfitLoss, accountId, ...data } = body;
     const targetAccountId = accountId || 1;
 
-    // 获取旧交易记录，同时验证归属账户（防止跨账户操作）
+    // 获取旧交易记录（旧记录 account_id 可能为 null，不加 account_id 过滤）
     const { data: oldTrade, error: oldTradeError } = await supabase
       .from('trades')
       .select('*')
       .eq('id', id)
-      .eq('account_id', targetAccountId)
       .single();
 
     if (oldTradeError) {
@@ -264,12 +263,11 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
     }
 
-    // 获取要删除的交易记录，同时验证归属账户（防止跨账户操作）
+    // 获取要删除的交易记录（旧记录 account_id 可能为 null，不加 account_id 过滤）
     const { data: trade, error: tradeError } = await supabase
       .from('trades')
       .select('*')
       .eq('id', id)
-      .eq('account_id', targetAccountId)
       .single();
 
     if (tradeError) {

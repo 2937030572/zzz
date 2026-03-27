@@ -972,7 +972,11 @@ export default function TradingApp() {
                           variant="ghost"
                           size="sm"
                           className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                          onClick={() => handleDeleteFundRecord(record.id)}
+                          onClick={() => {
+                            if (window.confirm(`确认删除这条${record.type === 'deposit' ? '入金' : '出金'}记录（${fmt(record.amount)}）？`)) {
+                              handleDeleteFundRecord(record.id);
+                            }
+                          }}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
