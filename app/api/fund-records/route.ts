@@ -1,6 +1,54 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
 
+/** 从 fund_records + trades 实时计算账户真实余额（不依赖 balance 快照，避免历史脏数据） */
+async function calcRealBalance(accountId: number): Promise<number> {
+  const [fundsRes, tradesRes] = await Promise.all([
+    supabase
+      .from('fund_records')
+      .select('type, amount')
+      .or(`account_id.eq.${accountId},account_id.is.null`),
+    supabase
+      .from('trades')
+      .select('profit_loss')
+      .or(`account_id.eq.${accountId},account_id.is.null`),
+  ]);
+
+  if (fundsRes.error) throw fundsRes.error;
+  if (tradesRes.error) throw tradesRes.error;
+
+  let balance = 0;
+  for (const r of fundsRes.data ?? []) {
+    const amt = Number(r.amount) || 0;
+    balance += r.type === 'deposit' ? amt : -amt;
+  }
+  for (const t of tradesRes.data ?? []) {
+    balance += Number(t.profit_loss) || 0;
+  }
+  return balance;
+}
+
+/** 更新 balance 快照表（upsert，保持 account_id=targetAccountId 那行同步） */
+async function syncBalanceSnapshot(accountId: number, newBalance: number): Promise<void> {
+  // 先检查是否存在 account_id 匹配的行
+  const { data: existing } = await supabase
+    .from('balance')
+    .select('id')
+    .eq('account_id', accountId)
+    .single();
+
+  if (existing) {
+    await supabase
+      .from('balance')
+      .update({ amount: String(newBalance) })
+      .eq('account_id', accountId);
+  } else {
+    await supabase
+      .from('balance')
+      .insert({ amount: String(newBalance), account_id: accountId });
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -8,18 +56,20 @@ export async function GET(request: Request) {
     const accountId = searchParams.get('accountId');
     const limit = parseInt(searchParams.get('limit') || '10');
 
-    let query = supabase.from('fund_records').select('*').order('created_at', { ascending: false }).limit(limit);
+    let query = supabase
+      .from('fund_records')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (accountId) {
       query = query.eq('account_id', accountId);
     }
-
     if (type) {
       query = query.eq('type', type);
     }
 
     const { data, error } = await query;
-
     if (error) throw error;
 
     const records = data.map((row: any) => ({
@@ -44,25 +94,12 @@ export async function POST(request: Request) {
     const { type, amount, date, accountId } = body;
     const targetAccountId = accountId || 1;
 
-    // 获取当前余额
-    const { data: balanceData, error: balanceError } = await supabase
-      .from('balance')
-      .select('amount')
-      .eq('account_id', targetAccountId)
-      .single();
-
-    if (balanceError && balanceError.code !== 'PGRST116') {
-      throw balanceError;
-    }
-
-    const currentBalance = balanceData ? Number(balanceData.amount) : 0;
-
-    // 计算新余额
-    const newBalance = type === 'deposit' 
-      ? currentBalance + Number(amount) 
+    // 实时重算当前真实余额
+    const currentBalance = await calcRealBalance(targetAccountId);
+    const newBalance = type === 'deposit'
+      ? currentBalance + Number(amount)
       : currentBalance - Number(amount);
 
-    // 余额不能为负数
     if (newBalance < 0) {
       return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
     }
@@ -76,21 +113,8 @@ export async function POST(request: Request) {
 
     if (recordError) throw recordError;
 
-    // 更新余额
-    if (balanceData) {
-      const { error: updateError } = await supabase
-        .from('balance')
-        .update({ amount: String(newBalance) })
-        .eq('account_id', targetAccountId);
-
-      if (updateError) throw updateError;
-    } else {
-      const { error: insertError } = await supabase
-        .from('balance')
-        .insert({ amount: String(newBalance), account_id: targetAccountId });
-
-      if (insertError) throw insertError;
-    }
+    // 同步余额快照
+    await syncBalanceSnapshot(targetAccountId, newBalance);
 
     return NextResponse.json({
       record: {
@@ -114,14 +138,13 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const accountId = searchParams.get('accountId');
-    const targetAccountId = accountId || 1;
+    const targetAccountId = Number(accountId) || 1;
 
     if (!id) {
       return NextResponse.json({ error: 'Fund record ID is required' }, { status: 400 });
     }
 
-    // 获取要删除的记录
-    // 注意：旧数据 account_id 可能为 null，需兼容处理
+    // 获取要删除的记录（不加 account_id 过滤，兼容历史 null 数据）
     const { data: record, error: recordError } = await supabase
       .from('fund_records')
       .select('*')
@@ -135,30 +158,7 @@ export async function DELETE(request: Request) {
       throw recordError;
     }
 
-    // 获取当前余额
-    const { data: balanceData, error: balanceError } = await supabase
-      .from('balance')
-      .select('amount')
-      .eq('account_id', targetAccountId)
-      .single();
-
-    if (balanceError && balanceError.code !== 'PGRST116') {
-      throw balanceError;
-    }
-
-    const currentBalance = balanceData ? Number(balanceData.amount) : 0;
-
-    // 计算新余额
-    const newBalance = record.type === 'deposit'
-      ? currentBalance - Number(record.amount)
-      : currentBalance + Number(record.amount);
-
-    // 余额不能为负数
-    if (newBalance < 0) {
-      return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
-    }
-
-    // 删除记录
+    // 先删除记录，再重算余额（避免把要删的记录算进去）
     const { error: deleteError } = await supabase
       .from('fund_records')
       .delete()
@@ -166,15 +166,11 @@ export async function DELETE(request: Request) {
 
     if (deleteError) throw deleteError;
 
-    // 更新余额
-    if (balanceData) {
-      const { error: updateError } = await supabase
-        .from('balance')
-        .update({ amount: String(newBalance) })
-        .eq('account_id', targetAccountId);
+    // 删除后重算真实余额
+    const newBalance = await calcRealBalance(targetAccountId);
 
-      if (updateError) throw updateError;
-    }
+    // 同步余额快照
+    await syncBalanceSnapshot(targetAccountId, newBalance);
 
     return NextResponse.json({ success: true, balance: newBalance });
   } catch (error) {
