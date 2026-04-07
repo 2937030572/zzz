@@ -716,21 +716,12 @@ export default function TradingApp() {
             <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500 bg-clip-text text-transparent">交易记录系统</h1>
             <p className="mt-2 text-sm sm:text-base text-amber-500/60">管理您的交易记录和资产</p>
           </div>
-          <div className="w-full sm:w-auto sm:ml-4 flex flex-col gap-2">
-            <a href="/options">
-              <Button
-                className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white font-semibold shadow-[0_0_20px_rgba(59,130,246,0.3)]"
-              >
-                🏦 币安期权历史
-              </Button>
-            </a>
-            <Button 
-              onClick={handleDownloadData}
-              className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold shadow-[0_0_20px_rgba(234,179,8,0.3)]"
-            >
-              下载数据
-            </Button>
-          </div>
+          <Button 
+            onClick={handleDownloadData}
+            className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold shadow-[0_0_20px_rgba(234,179,8,0.3)]"
+          >
+            下载数据
+          </Button>
         </div>
 
         {/* 资产余额卡片 */}
