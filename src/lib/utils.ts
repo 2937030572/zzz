@@ -10,6 +10,7 @@ export function getCloseReasonText(reason: string, remark?: string): string {
   if (reason === 'profit') return '正常止盈';
   if (reason === 'loss' || reason === 'stop_loss') return '正常止损';
   if (reason === 'other') return `其他原因 (${remark || '无备注'})`;
+  if (reason === 'pending') return '进行中';
   return reason;
 }
 

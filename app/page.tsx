@@ -13,7 +13,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Trash2, MoreVertical, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trash2, MoreVertical, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
   useTradingData,
@@ -25,6 +25,7 @@ import {
   type BollWidth,
   type Pattern,
   type CloseReason,
+  type BinanceOptionsStatus,
 } from '@/hooks/useTradingData';
 import { toast } from 'sonner';
 import { fmt, fmtTick, formatTradeDateTime, getLevelColor, getCloseReasonText, todayStr, daysAgoStr } from '@/lib/utils';
@@ -68,6 +69,7 @@ export default function TradingApp() {
     setTrades,
     fundRecords,
     setFundRecords,
+    binanceOptionsStatus,
     loading,
     error,
     loadData
@@ -122,6 +124,16 @@ export default function TradingApp() {
   // 编辑相关状态
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  // 设置对话框状态
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
+  const [settingsApiKey, setSettingsApiKey] = useState('');
+  const [settingsApiSecret, setSettingsApiSecret] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // 交易来源切换状态
+  type TradeSourceTab = 'manual' | 'binance';
+  const [tradeSourceTab, setTradeSourceTab] = useState<TradeSourceTab>('manual');
 
   // 计算交易级别（useMemo，只在相关 state 变化时重算）
   const tradeLevel = useMemo((): { level: string; color: string; description: string; suggestion: string } => {
@@ -261,6 +273,28 @@ export default function TradingApp() {
   }, [currentAccountId, loadData]);
 
   const currentAccount = accounts.find(a => a.id === currentAccountId);
+
+  // 币安期权连接状态标签
+  const binanceStatusLabel = binanceOptionsStatus.error
+    ? 'Binance options sync error'
+    : binanceOptionsStatus.configured
+      ? 'Binance options connected'
+      : 'Binance options not configured';
+  const binanceStatusClassName = binanceOptionsStatus.error
+    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+    : binanceOptionsStatus.configured
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+
+  // 刷新交易列表（静默刷新，不触发全屏 loading）
+  const handleRefreshTradeList = useCallback(async () => {
+    const ok = await loadData(currentAccountId, true);
+    if (!ok) {
+      toast.error('Refresh failed, please try again later');
+      return;
+    }
+    toast.success('List refreshed');
+  }, [currentAccountId, loadData]);
 
   // 计算累计入金和出金
   const { totalDeposit, totalWithdraw } = useMemo(() => {
@@ -473,6 +507,12 @@ export default function TradingApp() {
       const tradeToDelete = trades.find(t => t.id === tradeId);
       if (!tradeToDelete) return;
 
+      // 币安期权来源的交易只读，不可删除
+      if (tradeToDelete.source === 'binance-options' || tradeToDelete.isReadOnly) {
+        toast.error('币安期权成交记录为只读，无法删除');
+        return;
+      }
+
       // Number() 强转防止 balance 是 string 时相减变 NaN
       const currentBalance = Number(balance) || 0;
       const pl = Number(tradeToDelete.profitLoss) || 0;
@@ -505,6 +545,11 @@ export default function TradingApp() {
 
   // 编辑交易记录
   const handleEditTrade = useCallback((trade: Trade) => {
+    // 币安期权来源的交易只读，不可编辑
+    if (trade.source === 'binance-options' || trade.isReadOnly) {
+      toast.error('币安期权成交记录为只读，无法编辑');
+      return;
+    }
     setEditingTrade(trade);
     setSymbol(trade.symbol);
     setStrategy(trade.strategy);
@@ -619,36 +664,51 @@ export default function TradingApp() {
     return <span>{getCloseReasonText(reason, remark)}</span>;
   }, []);
 
-  // 根据日期范围过滤交易（useMemo 避免每次 render 重算）
+  // 根据日期范围和来源标签过滤交易
   const filteredTrades = useMemo(() => {
-    if (!filterStartDate && !filterEndDate) return trades;
-    return trades.filter((trade) => {
-      const tradeDate = trade.date;
-      if (filterStartDate && filterEndDate) return tradeDate >= filterStartDate && tradeDate <= filterEndDate;
-      if (filterStartDate) return tradeDate >= filterStartDate;
-      if (filterEndDate) return tradeDate <= filterEndDate;
-      return true;
-    });
-  }, [trades, filterStartDate, filterEndDate]);
+    let filtered = trades;
+
+    // 来源过滤
+    if (tradeSourceTab === 'manual') {
+      filtered = filtered.filter(t => t.source !== 'binance-options');
+    } else if (tradeSourceTab === 'binance') {
+      filtered = filtered.filter(t => t.source === 'binance-options');
+    }
+
+    // 日期过滤
+    if (filterStartDate || filterEndDate) {
+      filtered = filtered.filter((trade) => {
+        const tradeDate = trade.date;
+        if (filterStartDate && filterEndDate) return tradeDate >= filterStartDate && tradeDate <= filterEndDate;
+        if (filterStartDate) return tradeDate >= filterStartDate;
+        if (filterEndDate) return tradeDate <= filterEndDate;
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [trades, filterStartDate, filterEndDate, tradeSourceTab]);
 
   // 单次遍历计算所有统计数据（避免 JSX 里多次 filter+reduce）
   const filteredStats = useMemo(() => {
-    let winTotal = 0, winCount = 0, lossTotal = 0, lossCount = 0;
+    let tradeCount = 0, winTotal = 0, winCount = 0, lossTotal = 0, lossCount = 0;
     for (const t of filteredTrades) {
+      if (t.source === 'binance-options') continue; // 不统计币安期权成交
       const pl = Number(t.profitLoss) || 0;
+      tradeCount++;
       if (pl > 0) { winTotal += pl; winCount++; }
       else if (pl < 0) { lossTotal += pl; lossCount++; }
     }
     const total = winTotal + lossTotal;
-    const winRate = filteredTrades.length > 0
-      ? Math.round((winCount / filteredTrades.length) * 100)
+    const winRate = tradeCount > 0
+      ? Math.round((winCount / tradeCount) * 100)
       : 0;
-    return { winTotal, winCount, lossTotal, lossCount, total, winRate };
+    return { tradeCount, winTotal, winCount, lossTotal, lossCount, total, winRate };
   }, [filteredTrades]);
 
   // "其他原因总结"弹窗数据（useMemo，避免每次 render 重 filter）
   const otherReasonTrades = useMemo(
-    () => trades.filter(t => t.closeReason === 'other' && t.remark).slice(0, 15),
+    () => trades.filter(t => t.source !== 'binance-options' && t.closeReason === 'other' && t.remark).slice(0, 15),
     [trades]
   );
 
@@ -659,6 +719,7 @@ export default function TradingApp() {
       const endStr = todayStr();
       let count = 0, totalPL = 0, wins = 0;
       for (const t of trades) {
+        if (t.source === 'binance-options') continue; // 不统计币安期权成交
         if (t.date >= startStr && t.date <= endStr) {
           const pl = Number(t.profitLoss) || 0;
           count++;
@@ -689,6 +750,7 @@ export default function TradingApp() {
       else acc.wit += Number(r.amount) || 0;
     }
     for (const t of trades) {
+      if (t.source === 'binance-options') continue; // 不计入资产走势图
       getOrCreate(t.date).pl += Number(t.profitLoss) || 0;
     }
 
@@ -715,13 +777,50 @@ export default function TradingApp() {
           <div className="w-full sm:flex-1 rounded-xl border border-amber-500/30 bg-gray-900/90 p-4 sm:p-6 text-center shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
             <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500 bg-clip-text text-transparent">交易记录系统</h1>
             <p className="mt-2 text-sm sm:text-base text-amber-500/60">管理您的交易记录和资产</p>
+            {/* 币安期权连接状态 */}
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 font-medium ${binanceStatusClassName}`}>
+                {binanceStatusLabel}
+              </span>
+              <span className="text-amber-300/70">
+                {binanceOptionsStatus.configured ? `已同步 ${binanceOptionsStatus.count} 笔成交` : '配置 Binance API 以显示期权成交'}
+              </span>
+              {binanceOptionsStatus.error && (
+                <span className="text-red-300/80">{binanceOptionsStatus.error}</span>
+              )}
+            </div>
           </div>
-          <Button 
-            onClick={handleDownloadData}
-            className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold shadow-[0_0_20px_rgba(234,179,8,0.3)]"
-          >
-            下载数据
-          </Button>
+          <div className="w-full sm:w-auto sm:ml-4 flex flex-col gap-2">
+            <Button 
+              onClick={handleDownloadData}
+              className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold shadow-[0_0_20px_rgba(234,179,8,0.3)]"
+            >
+              下载数据
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleRefreshTradeList}
+              className="w-full sm:w-auto border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              刷新列表
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSettingsApiKey('');
+                setSettingsApiSecret('');
+                setIsSettingsDialogOpen(true);
+              }}
+              className="w-full sm:w-auto border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              API 设置
+            </Button>
+          </div>
         </div>
 
         {/* 资产余额卡片 */}
@@ -1249,7 +1348,10 @@ export default function TradingApp() {
                 清除筛选
               </Button>
             </div>
-            
+
+            {/* 手动交易统计（仅在手动交易标签页显示） */}
+            {tradeSourceTab === 'manual' && (
+              <>
             {/* 盈利统计 */}
             <div className="mb-4">
               <div className="mb-2 text-sm text-green-400">盈利统计</div>
@@ -1287,6 +1389,28 @@ export default function TradingApp() {
                 </div>
               </div>
             </div>
+              </>
+            )}
+
+            {/* Binance 期权信息提示 */}
+            {tradeSourceTab === 'binance' && (
+              <div className="mb-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
+                <div className="flex items-center gap-2 text-blue-400 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-6h2v6zm0-8h-2V7h2v2zm4 8h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                  </svg>
+                  <span className="font-medium">Binance 期权成交记录</span>
+                </div>
+                <div className="text-sm text-blue-300/70 space-y-1">
+                  <p>• 数据来自 Binance EAPI 期权账户，实时同步</p>
+                  <p>• 点击右上角「API 设置」配置 Binance API 凭证</p>
+                  <p>• 以下记录为只读数据，无法编辑或删除</p>
+                  {binanceOptionsStatus.count > 0 && (
+                    <p className="font-medium text-blue-300">当前显示 {filteredTrades.length} 笔成交记录</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 总体统计 */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -1644,159 +1768,402 @@ export default function TradingApp() {
         {/* 交易记录列表 */}
         <Card className="border-amber-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
           <CardHeader className="border-b border-amber-500/20">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <CardTitle className="bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">交易记录</CardTitle>
                 <CardDescription className="text-amber-500/60">所有交易历史记录</CardDescription>
               </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+              <div className="flex items-center gap-2">
+                {/* 交易来源切换 */}
+                <div className="inline-flex rounded-lg border border-amber-500/30 bg-gray-800 p-0.5">
+                  <button
+                    onClick={() => setTradeSourceTab('manual')}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-all ${
+                      tradeSourceTab === 'manual'
+                        ? 'bg-amber-500/20 text-amber-400 font-medium shadow-sm'
+                        : 'text-gray-400 hover:text-gray-200'
+                    }`}
                   >
-                    其他原因总结
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="border-blue-500/30 bg-gray-900 text-white max-w-md">
-                  <DialogHeader>
-                    <DialogTitle className="bg-gradient-to-r from-blue-400 to-cyan-500 bg-clip-text text-transparent">其他原因交易总结</DialogTitle>
-                    <DialogDescription className="text-blue-500/60">平仓原因为"其他原因"的交易记录</DialogDescription>
-                  </DialogHeader>
-                  <div className="py-4 space-y-3 max-h-[400px] overflow-y-auto">
-                    {otherReasonTrades.length === 0 ? (
-                      <p className="text-center text-amber-500/50 py-4">暂无其他原因的交易记录</p>
-                    ) : (
-                      otherReasonTrades.map((trade, index) => (
-                        <div key={trade.id} 
-                          className={`p-3 rounded-lg border border-amber-500/20 bg-gray-800/50 ${index < otherReasonTrades.length - 1 ? 'mb-2' : ''}`}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="font-semibold text-white">{trade.symbol}</span>
-                            <span className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
-                            </span>
-                          </div>
-                          <div className="text-sm text-gray-400 mb-1">
-                            {formatTradeDateTime(trade.date, trade.openTime)}
-                          </div>
-                          <div className="text-sm">
-                            <span className="text-gray-400">原因：</span>
-                            <span className="bg-yellow-400 text-black font-semibold px-1 rounded">{trade.remark}</span>
-                          </div>
-                        </div>
-                      ))
+                    手动交易
+                  </button>
+                  <button
+                    onClick={() => setTradeSourceTab('binance')}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1.5 ${
+                      tradeSourceTab === 'binance'
+                        ? 'bg-blue-500/20 text-blue-400 font-medium shadow-sm'
+                        : 'text-gray-400 hover:text-gray-200'
+                    }`}
+                  >
+                    Binance 期权
+                    {!binanceOptionsStatus.configured && (
+                      <span className="text-xs text-gray-500">(未配置)</span>
                     )}
-                  </div>
-                </DialogContent>
-              </Dialog>
+                  </button>
+                </div>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                    >
+                      其他原因总结
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="border-blue-500/30 bg-gray-900 text-white max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="bg-gradient-to-r from-blue-400 to-cyan-500 bg-clip-text text-transparent">其他原因交易总结</DialogTitle>
+                      <DialogDescription className="text-blue-500/60">平仓原因为"其他原因"的交易记录</DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-3 max-h-[400px] overflow-y-auto">
+                      {otherReasonTrades.length === 0 ? (
+                        <p className="text-center text-amber-500/50 py-4">暂无其他原因的交易记录</p>
+                      ) : (
+                        otherReasonTrades.map((trade, index) => (
+                          <div key={trade.id}
+                            className={`p-3 rounded-lg border border-amber-500/20 bg-gray-800/50 ${index < otherReasonTrades.length - 1 ? 'mb-2' : ''}`}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="font-semibold text-white">{trade.symbol}</span>
+                              <span className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-400 mb-1">
+                              {formatTradeDateTime(trade.date, trade.openTime)}
+                            </div>
+                            <div className="text-sm">
+                              <span className="text-gray-400">原因：</span>
+                              <span className="bg-yellow-400 text-black font-semibold px-1 rounded">{trade.remark}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className={`${filteredTrades.length > 15 ? 'max-h-[600px] overflow-y-auto' : ''} overflow-x-auto`}>
-              <Table>
-                <TableHeader className={filteredTrades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
-                  <TableRow>
-                    <TableHead className="text-amber-400">交易品种</TableHead>
-                    <TableHead className="text-amber-400">开仓日期</TableHead>
-                    <TableHead className="text-amber-400">入场策略</TableHead>
-                    <TableHead className="text-amber-400">仓位</TableHead>
-                    <TableHead className="text-amber-400">开仓金额</TableHead>
-                    <TableHead className="text-amber-400">盈亏金额</TableHead>
-                    <TableHead className="text-amber-400">平仓状态</TableHead>
-                    <TableHead className="text-amber-400">平仓原因</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTrades.length === 0 ? (
+              {/* 根据数据来源显示不同表格 */}
+              {tradeSourceTab === 'binance' ? (
+                /* Binance 期权专用表格 */
+                <Table>
+                  <TableHeader className={filteredTrades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-amber-500/50">
-                        暂无交易记录
-                      </TableCell>
+                      <TableHead className="text-blue-400">交易品种</TableHead>
+                      <TableHead className="text-blue-400">成交时间</TableHead>
+                      <TableHead className="text-blue-400">方向</TableHead>
+                      <TableHead className="text-blue-400">类型</TableHead>
+                      <TableHead className="text-blue-400">数量</TableHead>
+                      <TableHead className="text-blue-400">价格</TableHead>
+                      <TableHead className="text-blue-400">报价金额</TableHead>
+                      <TableHead className="text-blue-400">手续费</TableHead>
+                      <TableHead className="text-blue-400">已实现盈亏</TableHead>
+                      <TableHead className="text-blue-400">订单号</TableHead>
                     </TableRow>
-                  ) : (
-                    filteredTrades.map((trade) => {
-                      return (
-                        <TableRow 
-                          key={trade.id} 
-                          className="hover:bg-amber-500/5 border-amber-500/10"
-                        >
-                          <TableCell className="font-medium text-white">{trade.symbol}</TableCell>
-                          <TableCell className="text-gray-300">{formatTradeDateTime(trade.date, trade.openTime)}</TableCell>
-                          <TableCell className="text-white">
-                            {(() => {
-                              const parts = trade.strategy.split('/');
-                              const level = parts[0];
-                              const rest = parts.slice(1).join('/');
-                              return (
-                                <>
-                                  <span className={getLevelColor(level)}>{level}</span>
-                                  {rest && <span className="text-gray-300">/{rest}</span>}
-                                </>
-                              );
-                            })()}
-                          </TableCell>
-                          <TableCell className="text-amber-300">{trade.position}%</TableCell>
-                          <TableCell className="font-semibold text-amber-400">{fmt(trade.openAmount)}</TableCell>
-                          <TableCell className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
-                          </TableCell>
-                          <TableCell>
-                            {trade.isClosed ? (
-                              <span className="inline-flex items-center rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-medium text-green-400">
-                                已平仓
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center rounded-full bg-gray-500/20 border border-gray-500/40 px-2.5 py-0.5 text-xs font-medium text-gray-400">
-                                未平仓
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-white">
-                            <div className="flex items-center justify-between">
-                              <span>{getCloseReasonComponent(trade.closeReason, trade.remark)}</span>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
-                                  >
-                                    <MoreVertical className="h-4 w-4" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-32 p-2 bg-gray-900 border-amber-500/30" align="end">
-                                  <div className="flex flex-col gap-1">
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="w-full justify-start text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
-                                      onClick={() => handleEditTrade(trade)}
-                                    >
-                                      编辑
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="w-full justify-start text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                                      onClick={() => handleDeleteTrade(trade.id)}
-                                    >
-                                      删除
-                                    </Button>
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTrades.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center text-blue-500/50">
+                          暂无 Binance 期权成交记录
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredTrades.map((trade) => {
+                        const isBinance = trade.source === 'binance-options';
+                        const sideColor = trade.side === 'BUY' ? 'text-green-400' : trade.side === 'SELL' ? 'text-red-400' : 'text-gray-400';
+                        const sideText = trade.side === 'BUY' ? '买入 (Buy)' : trade.side === 'SELL' ? '卖出 (Sell)' : '-';
+                        const contractTypeColor = trade.strategy?.includes('Call') ? 'text-green-400' : trade.strategy?.includes('Put') ? 'text-red-400' : 'text-gray-400';
+                        const contractTypeText = trade.strategy?.includes('Call') ? 'Call (看涨)' : trade.strategy?.includes('Put') ? 'Put (看跌)' : '-';
+                        const isMaker = trade.strategy?.includes('Maker');
+                        
+                        return (
+                          <TableRow 
+                            key={trade.id} 
+                            className="hover:bg-blue-500/5 border-blue-500/10"
+                          >
+                            <TableCell className="font-medium text-white">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-semibold">{trade.symbol}</span>
+                                {isMaker && (
+                                  <span className="inline-flex items-center rounded-full bg-purple-500/20 border border-purple-500/40 px-1.5 py-0.5 text-[10px] font-medium text-purple-400 w-fit">
+                                    Maker
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-gray-300 text-sm">
+                              {formatTradeDateTime(trade.date, trade.openTime)}
+                            </TableCell>
+                            <TableCell className={`font-semibold ${sideColor}`}>
+                              {sideText}
+                            </TableCell>
+                            <TableCell className={`font-medium ${contractTypeColor}`}>
+                              {contractTypeText}
+                            </TableCell>
+                            <TableCell className="text-amber-300">
+                              {trade.quantity ? trade.quantity.toFixed(4) : '-'}
+                            </TableCell>
+                            <TableCell className="text-amber-300">
+                              {trade.price ? `$${trade.price.toFixed(4)}` : '-'}
+                            </TableCell>
+                            <TableCell className="font-semibold text-amber-400">
+                              ${trade.openAmount.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-red-400 text-sm">
+                              {trade.fee ? `-$${trade.fee.toFixed(4)}` : '-'}
+                            </TableCell>
+                            <TableCell className={`font-semibold ${(trade.profitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {(trade.profitLoss || 0) >= 0 ? '+' : ''}{trade.profitLoss ? `$${trade.profitLoss.toFixed(2)}` : '-'}
+                            </TableCell>
+                            <TableCell className="text-gray-400 text-xs">
+                              {trade.orderId ? (
+                                <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded" title={trade.orderId}>
+                                  {trade.orderId.slice(0, 8)}...
+                                </span>
+                              ) : '-'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              ) : (
+                /* 手动交易表格 */
+                <Table>
+                  <TableHeader className={filteredTrades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
+                    <TableRow>
+                      <TableHead className="text-amber-400">交易品种</TableHead>
+                      <TableHead className="text-amber-400">开仓日期</TableHead>
+                      <TableHead className="text-amber-400">入场策略</TableHead>
+                      <TableHead className="text-amber-400">仓位</TableHead>
+                      <TableHead className="text-amber-400">开仓金额</TableHead>
+                      <TableHead className="text-amber-400">盈亏金额</TableHead>
+                      <TableHead className="text-amber-400">平仓状态</TableHead>
+                      <TableHead className="text-amber-400">平仓原因</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTrades.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-amber-500/50">
+                          暂无交易记录
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredTrades.map((trade) => {
+                        const isBinance = trade.source === 'binance-options';
+                        return (
+                          <TableRow 
+                            key={trade.id} 
+                            className="hover:bg-amber-500/5 border-amber-500/10"
+                          >
+                            <TableCell className="font-medium text-white">
+                              <div className="flex flex-col gap-0.5">
+                                <span>{trade.symbol}</span>
+                                {isBinance && (
+                                  <span className="inline-flex items-center rounded-full bg-blue-500/20 border border-blue-500/40 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 w-fit">
+                                    Binance
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-gray-300">{formatTradeDateTime(trade.date, trade.openTime)}</TableCell>
+                            <TableCell className="text-white">
+                              {isBinance ? (
+                                <span className="text-gray-300">{trade.strategy}</span>
+                              ) : (
+                                (() => {
+                                  const parts = trade.strategy.split('/');
+                                  const level = parts[0];
+                                  const rest = parts.slice(1).join('/');
+                                  return (
+                                    <>
+                                      <span className={getLevelColor(level)}>{level}</span>
+                                      {rest && <span className="text-gray-300">/{rest}</span>}
+                                    </>
+                                  );
+                                })()
+                              )}
+                            </TableCell>
+                            <TableCell className="text-amber-300">{isBinance ? '-' : `${trade.position}%`}</TableCell>
+                            <TableCell className="font-semibold text-amber-400">{fmt(trade.openAmount)}</TableCell>
+                            <TableCell className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
+                            </TableCell>
+                            <TableCell>
+                              {isBinance ? (
+                                <span className="inline-flex items-center rounded-full bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 text-xs font-medium text-blue-400">
+                                  成交
+                                </span>
+                              ) : trade.isClosed ? (
+                                <span className="inline-flex items-center rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-medium text-green-400">
+                                  已平仓
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center rounded-full bg-gray-500/20 border border-gray-500/40 px-2.5 py-0.5 text-xs font-medium text-gray-400">
+                                  未平仓
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-white">
+                              <div className="flex items-center justify-between">
+                                <span>
+                                  {isBinance
+                                    ? (() => {
+                                        const parts = [
+                                          trade.side === 'BUY' ? '买入' : trade.side === 'SELL' ? '卖出' : '',
+                                          trade.quantity ? `${trade.quantity} 张` : '',
+                                          trade.fee ? `手续费 $${(trade.fee).toFixed(4)}` : '',
+                                        ].filter(Boolean);
+                                        return <span className="text-blue-300 text-xs">{parts.join(' · ') || '币安期权成交'}</span>;
+                                      })()
+                                    : getCloseReasonComponent(trade.closeReason, trade.remark)
+                                  }
+                                </span>
+                                {!isBinance && (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                                      >
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-32 p-2 bg-gray-900 border-amber-500/30" align="end">
+                                      <div className="flex flex-col gap-1">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="w-full justify-start text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                                          onClick={() => handleEditTrade(trade)}
+                                        >
+                                          编辑
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="w-full justify-start text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                                          onClick={() => handleDeleteTrade(trade.id)}
+                                        >
+                                          删除
+                                        </Button>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              )}
             </div>
           </CardContent>
         </Card>
+
+        {/* Binance API 设置对话框 */}
+        <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
+          <DialogContent className="border-blue-500/30 bg-gray-900 text-white max-w-md">
+            <DialogHeader>
+              <DialogTitle className="bg-gradient-to-r from-blue-400 to-cyan-500 bg-clip-text text-transparent flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                Binance API 设置
+              </DialogTitle>
+              <DialogDescription className="text-blue-500/60">
+                配置 Binance 期权 API 凭证以同步成交记录。凭证将安全保存到本地环境变量文件中。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="settings-api-key" className="text-blue-400">API Key</Label>
+                <Input
+                  id="settings-api-key"
+                  placeholder="请输入 Binance API Key"
+                  value={settingsApiKey}
+                  onChange={(e) => setSettingsApiKey(e.target.value)}
+                  className="border-blue-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="settings-api-secret" className="text-blue-400">API Secret</Label>
+                <Input
+                  id="settings-api-secret"
+                  type="password"
+                  placeholder="请输入 Binance API Secret"
+                  value={settingsApiSecret}
+                  onChange={(e) => setSettingsApiSecret(e.target.value)}
+                  className="border-blue-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+                <p className="text-xs text-blue-400/70">
+                  <strong className="text-blue-300">提示：</strong>请确保您的 API Key 具有期权账户只读权限。建议创建独立的白名单密钥，仅授予读取权限，不要授予提币或交易权限。
+                </p>
+              </div>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                <p className="text-xs text-amber-400/70">
+                  <strong className="text-amber-300">注意：</strong>保存后需要刷新页面（或重启开发服务器）才能使新配置生效。
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsSettingsDialogOpen(false)}
+                className="border-gray-600 text-gray-400 hover:bg-gray-800"
+                disabled={isSavingSettings}
+              >
+                取消
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!settingsApiKey.trim() || !settingsApiSecret.trim()) {
+                    toast.error('请填写完整的 API Key 和 Secret');
+                    return;
+                  }
+                  setIsSavingSettings(true);
+                  try {
+                    const res = await fetch('/api/settings/save-env', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        BINANCE_OPTIONS_API_KEY: settingsApiKey.trim(),
+                        BINANCE_OPTIONS_API_SECRET: settingsApiSecret.trim(),
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '保存失败');
+                    toast.success('API 凭证已保存，页面将刷新...');
+                    setIsSettingsDialogOpen(false);
+                    // 短暂延迟后刷新页面，让用户看到成功提示
+                    setTimeout(() => window.location.reload(), 1500);
+                  } catch (err: any) {
+                    toast.error('保存失败：' + (err.message || '未知错误'));
+                  } finally {
+                    setIsSavingSettings(false);
+                  }
+                }}
+                disabled={isSavingSettings}
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold"
+              >
+                {isSavingSettings ? '保存中...' : '保存并刷新'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
