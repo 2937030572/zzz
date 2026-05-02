@@ -31,6 +31,8 @@ export interface Trade {
   date: string;
   isClosed: boolean;
   accountId?: number;
+  source?: string;
+  isReadOnly?: boolean;
 }
 
 export interface FundRecord {
@@ -90,6 +92,8 @@ export const useTradingData = (initialAccountId: number = 1) => {
             date: String(t.date ?? ''),
             isClosed: (t.isClosed as boolean) ?? true,
             accountId: t.accountId != null ? Number(t.accountId) : undefined,
+            source: t.source ? String(t.source) : undefined,
+            isReadOnly: (t.isReadOnly as boolean) ?? false,
           }))
       );
 

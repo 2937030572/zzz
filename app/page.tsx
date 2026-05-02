@@ -1,6 +1,6 @@
 'use client';
 
-import { Cog6Tooth } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1489,7 +1489,7 @@ export default function TradingApp() {
           <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col data-panel">
             <DialogHeader>
               <DialogTitle className="font-mono text-lg tracking-widest text-cyan-400 flex items-center gap-2">
-                <Cog6Tooth className="w-5 h-5 text-cyan-500" />
+                <Settings className="w-5 h-5 text-cyan-500" />
                 <span className="bg-gradient-to-r from-cyan-400 to-cyan-300 bg-clip-text text-transparent">EDIT TRADE RECORD</span>
               </DialogTitle>
               <DialogDescription className="text-cyan-500/50 font-mono text-xs tracking-wider">// MODIFY TRADE PARAMETERS</DialogDescription>
