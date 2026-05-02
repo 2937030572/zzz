@@ -1673,6 +1673,66 @@ export default function TradingApp() {
                           <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
                           [ TRADE LEVEL ]
                         </Label>
+                        {/* 量能背离 */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-20">量能背离</span>
+                          <Select value={volumeTrend} onValueChange={(v: any) => setVolumeTrend(v)}>
+                            <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="border-cyan-500/30 bg-gray-800">
+                              <SelectItem value="no_trend" className="text-white hover:bg-gray-700">无量能背离</SelectItem>
+                              <SelectItem value="top_divergence" className="text-white hover:bg-gray-700">顶背离</SelectItem>
+                              <SelectItem value="bottom_divergence" className="text-white hover:bg-gray-700">底背离</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {/* 布林带收缩 */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-20">布林带收缩</span>
+                          <Select value={bollContraction} onValueChange={(v: any) => setBollContraction(v)}>
+                            <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="border-cyan-500/30 bg-gray-800">
+                              <SelectItem value="1h" className="text-white hover:bg-gray-700">1小时</SelectItem>
+                              <SelectItem value="2h" className="text-white hover:bg-gray-700">2小时</SelectItem>
+                              <SelectItem value="4h_plus" className="text-white hover:bg-gray-700">4小时及以上</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {/* 布林带宽度 */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-20">布林带宽度</span>
+                          <Select value={bollWidth} onValueChange={(v: any) => setBollWidth(v)}>
+                            <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="border-cyan-500/30 bg-gray-800">
+                              <SelectItem value="converged" className="text-white hover:bg-gray-700">粘合</SelectItem>
+                              <SelectItem value="not_converged" className="text-white hover:bg-gray-700">未粘合</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {/* 形态 */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-20">形态</span>
+                          <Select value={pattern} onValueChange={(v: any) => setPattern(v)}>
+                            <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="border-cyan-500/30 bg-gray-800">
+                              <SelectItem value="none" className="text-white hover:bg-gray-700">无形态</SelectItem>
+                              <SelectItem value="head_shoulders" className="text-white hover:bg-gray-700">头肩顶/底</SelectItem>
+                              <SelectItem value="double_top_bottom" className="text-white hover:bg-gray-700">双顶/双底</SelectItem>
+                              <SelectItem value="triple_top_bottom" className="text-white hover:bg-gray-700">三顶/三底</SelectItem>
+                              <SelectItem value="triangle" className="text-white hover:bg-gray-700">三角形</SelectItem>
+                              <SelectItem value="cup_handle" className="text-white hover:bg-gray-700">杯柄形</SelectItem>
+                              <SelectItem value="channel" className="text-white hover:bg-gray-700">通道</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {/* 显示结果 */}
                         <div className={`text-lg font-bold ${tradeLevel.color}`}>{tradeLevel.level}</div>
                         <div className="text-sm text-gray-400">{tradeLevel.description}</div>
                         <div className="text-xs text-amber-400/70">{tradeLevel.suggestion}</div>
