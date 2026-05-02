@@ -1486,7 +1486,7 @@ export default function TradingApp() {
           setIsEditDialogOpen(open);
           if (!open) { setEditingTrade(null); resetTradeForm(); }
         }}>
-          <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col data-panel">
+          <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-w-md max-h-[85vh] flex flex-col overflow-hidden data-panel">
             <DialogHeader>
               <DialogTitle className="font-mono text-lg tracking-widest text-cyan-400 flex items-center gap-2">
                 <Settings className="w-5 h-5 text-cyan-500" />
@@ -1642,7 +1642,7 @@ export default function TradingApp() {
                       </span>
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-h-[90vh] flex flex-col data-panel relative">
+                  <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-h-[85vh] flex flex-col overflow-hidden data-panel relative">
                     <DialogHeader>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg border border-cyan-500/40 bg-cyan-500/10 flex items-center justify-center">
