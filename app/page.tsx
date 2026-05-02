@@ -1,5 +1,6 @@
 'use client';
 
+import { Cog6Tooth } from 'lucide-react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,7 +26,6 @@ import {
   type BollWidth,
   type Pattern,
   type CloseReason,
-  type BinanceOptionsStatus,
 } from '@/hooks/useTradingData';
 import { toast } from 'sonner';
 import { fmt, fmtTick, formatTradeDateTime, getLevelColor, getCloseReasonText, todayStr, daysAgoStr } from '@/lib/utils';
@@ -52,6 +52,13 @@ const PATTERN_TEXT: Record<string, string> = {
   'channel': '通道',
 };
 
+// 可复用CSS类常量（提升可维护性）
+const CYAN_INPUT_CLASSES = 'border-cyan-500/30 bg-gray-800 text-cyan-300 font-mono focus:border-cyan-500 focus:shadow-[0_0_10px_rgba(0,245,255,0.2)]';
+const CYAN_LABEL_CLASSES = 'text-cyan-400 font-mono text-xs tracking-wider';
+const SECTION_TITLE_CLASSES = 'flex items-center gap-2 mb-3';
+const SECTION_INDICATOR_CLASSES = 'w-1 h-4 bg-cyan-400 rounded-full';
+const SECTION_TEXT_CLASSES = 'text-sm font-mono text-cyan-400/80';
+
 /** 将 date + openTime 合并为 datetime-local 格式（模块级纯函数） */
 function combineDateTime(date: string, time: string): string {
   return `${date}T${time}`;
@@ -69,7 +76,6 @@ export default function TradingApp() {
     setTrades,
     fundRecords,
     setFundRecords,
-    binanceOptionsStatus,
     loading,
     error,
     loadData
@@ -120,20 +126,24 @@ export default function TradingApp() {
   // 日期筛选状态
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [dateRangeError, setDateRangeError] = useState<boolean>(false);
+
+  // 监听日期范围变化，验证并显示提示（使用防抖避免频繁提示）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (filterStartDate && filterEndDate && filterStartDate > filterEndDate) {
+        setDateRangeError(true);
+        toast.error('开始日期不能晚于结束日期');
+      } else {
+        setDateRangeError(false);
+      }
+    }, 500); // 500ms防抖
+    return () => clearTimeout(timer);
+  }, [filterStartDate, filterEndDate]);
 
   // 编辑相关状态
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  // 设置对话框状态
-  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
-  const [settingsApiKey, setSettingsApiKey] = useState('');
-  const [settingsApiSecret, setSettingsApiSecret] = useState('');
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-
-  // 交易来源切换状态
-  type TradeSourceTab = 'manual' | 'binance';
-  const [tradeSourceTab, setTradeSourceTab] = useState<TradeSourceTab>('manual');
 
   // 计算交易级别（useMemo，只在相关 state 变化时重算）
   const tradeLevel = useMemo((): { level: string; color: string; description: string; suggestion: string } => {
@@ -273,18 +283,6 @@ export default function TradingApp() {
   }, [currentAccountId, loadData]);
 
   const currentAccount = accounts.find(a => a.id === currentAccountId);
-
-  // 币安期权连接状态标签
-  const binanceStatusLabel = binanceOptionsStatus.error
-    ? 'Binance options sync error'
-    : binanceOptionsStatus.configured
-      ? 'Binance options connected'
-      : 'Binance options not configured';
-  const binanceStatusClassName = binanceOptionsStatus.error
-    ? 'border-red-500/30 bg-red-500/10 text-red-300'
-    : binanceOptionsStatus.configured
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-      : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
 
   // 刷新交易列表（静默刷新，不触发全屏 loading）
   const handleRefreshTradeList = useCallback(async () => {
@@ -507,12 +505,6 @@ export default function TradingApp() {
       const tradeToDelete = trades.find(t => t.id === tradeId);
       if (!tradeToDelete) return;
 
-      // 币安期权来源的交易只读，不可删除
-      if (tradeToDelete.source === 'binance-options' || tradeToDelete.isReadOnly) {
-        toast.error('币安期权成交记录为只读，无法删除');
-        return;
-      }
-
       // Number() 强转防止 balance 是 string 时相减变 NaN
       const currentBalance = Number(balance) || 0;
       const pl = Number(tradeToDelete.profitLoss) || 0;
@@ -566,6 +558,13 @@ export default function TradingApp() {
   const handleSaveEdit = useCallback(async () => {
     if (!editingTrade || !symbol || !openDateTime) return;
 
+    // 验证 openDateTime 是否有效
+    const dateTime = new Date(openDateTime);
+    if (isNaN(dateTime.getTime())) {
+      toast.error('开仓日期时间格式无效');
+      return;
+    }
+
     // 如果已平仓，盈亏金额必填
     if (isClosed && !profitLoss) {
       toast.error('已平仓时，盈亏金额为必填项');
@@ -582,6 +581,11 @@ export default function TradingApp() {
 
       if (profitLoss && isClosed) {
         newProfitLoss = Number(profitLoss);
+        // 添加 NaN 检查
+        if (isNaN(newProfitLoss)) {
+          toast.error('盈亏金额必须是有效数字');
+          return;
+        }
 
         // 检查编辑后余额是否为负数
         estimatedBalance = currentBalance - oldProfitLoss + newProfitLoss;
@@ -664,19 +668,17 @@ export default function TradingApp() {
     return <span>{getCloseReasonText(reason, remark)}</span>;
   }, []);
 
-  // 根据日期范围和来源标签过滤交易
+  // 根据日期范围过滤交易
   const filteredTrades = useMemo(() => {
     let filtered = trades;
 
-    // 来源过滤
-    if (tradeSourceTab === 'manual') {
-      filtered = filtered.filter(t => t.source !== 'binance-options');
-    } else if (tradeSourceTab === 'binance') {
-      filtered = filtered.filter(t => t.source === 'binance-options');
-    }
-
     // 日期过滤
     if (filterStartDate || filterEndDate) {
+      // 添加边界检查：如果开始日期晚于结束日期，返回空数组
+      if (filterStartDate && filterEndDate && filterStartDate > filterEndDate) {
+        return [];
+      }
+      
       filtered = filtered.filter((trade) => {
         const tradeDate = trade.date;
         if (filterStartDate && filterEndDate) return tradeDate >= filterStartDate && tradeDate <= filterEndDate;
@@ -687,13 +689,12 @@ export default function TradingApp() {
     }
 
     return filtered;
-  }, [trades, filterStartDate, filterEndDate, tradeSourceTab]);
+  }, [trades, filterStartDate, filterEndDate]);
 
   // 单次遍历计算所有统计数据（避免 JSX 里多次 filter+reduce）
   const filteredStats = useMemo(() => {
     let tradeCount = 0, winTotal = 0, winCount = 0, lossTotal = 0, lossCount = 0;
     for (const t of filteredTrades) {
-      if (t.source === 'binance-options') continue; // 不统计币安期权成交
       const pl = Number(t.profitLoss) || 0;
       tradeCount++;
       if (pl > 0) { winTotal += pl; winCount++; }
@@ -708,7 +709,7 @@ export default function TradingApp() {
 
   // "其他原因总结"弹窗数据（useMemo，避免每次 render 重 filter）
   const otherReasonTrades = useMemo(
-    () => trades.filter(t => t.source !== 'binance-options' && t.closeReason === 'other' && t.remark).slice(0, 15),
+    () => trades.filter(t => t.closeReason === 'other' && t.remark).slice(0, 15),
     [trades]
   );
 
@@ -719,7 +720,6 @@ export default function TradingApp() {
       const endStr = todayStr();
       let count = 0, totalPL = 0, wins = 0;
       for (const t of trades) {
-        if (t.source === 'binance-options') continue; // 不统计币安期权成交
         if (t.date >= startStr && t.date <= endStr) {
           const pl = Number(t.profitLoss) || 0;
           count++;
@@ -750,7 +750,6 @@ export default function TradingApp() {
       else acc.wit += Number(r.amount) || 0;
     }
     for (const t of trades) {
-      if (t.source === 'binance-options') continue; // 不计入资产走势图
       getOrCreate(t.date).pl += Number(t.profitLoss) || 0;
     }
 
@@ -767,69 +766,47 @@ export default function TradingApp() {
   }, [trades, fundRecords]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-zinc-950 to-black p-4 md:p-8 relative overflow-hidden">
-      {/* 背景 */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(234,179,8,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(234,179,8,0.02)_1px,transparent_1px)] bg-[size:50px_50px] pointer-events-none" />
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-zinc-950 to-black p-4 md:p-8 relative overflow-hidden circuit-bg">
+      {/* 扫描线效果 */}
+      <div className="scanline absolute inset-0 pointer-events-none" />
+      
+      {/* 背景网格 */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(0,245,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,245,255,0.03)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none" />
       
       <div className="mx-auto max-w-6xl space-y-6 relative z-10">
         {/* 标题和下载按钮 */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="w-full sm:flex-1 rounded-xl border border-amber-500/30 bg-gray-900/90 p-4 sm:p-6 text-center shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
-            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500 bg-clip-text text-transparent">交易记录系统</h1>
-            <p className="mt-2 text-sm sm:text-base text-amber-500/60">管理您的交易记录和资产</p>
-            {/* 币安期权连接状态 */}
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
-              <span className={`inline-flex items-center rounded-full border px-3 py-1 font-medium ${binanceStatusClassName}`}>
-                {binanceStatusLabel}
-              </span>
-              <span className="text-amber-300/70">
-                {binanceOptionsStatus.configured ? `已同步 ${binanceOptionsStatus.count} 笔成交` : '配置 Binance API 以显示期权成交'}
-              </span>
-              {binanceOptionsStatus.error && (
-                <span className="text-red-300/80">{binanceOptionsStatus.error}</span>
-              )}
-            </div>
+          <div className="w-full sm:flex-1 rounded-xl border border-cyan-500/30 bg-gray-900/90 p-4 sm:p-6 text-center shadow-[0_0_30px_rgba(0,245,255,0.15)] backdrop-blur-sm data-panel relative">
+            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-300 bg-clip-text text-transparent">⚙ 交易记录系统</h1>
+            <p className="mt-2 text-sm sm:text-base text-cyan-500/60 font-mono">MECHANICAL TRADING SYSTEM v2.0</p>
           </div>
           <div className="w-full sm:w-auto sm:ml-4 flex flex-col gap-2">
             <Button 
               onClick={handleDownloadData}
-              className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold shadow-[0_0_20px_rgba(234,179,8,0.3)]"
+              className="w-full sm:w-auto bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold shadow-[0_0_20px_rgba(0,245,255,0.3)] btn-mechanical"
             >
-              下载数据
+              ⬇ EXPORT.DATA
             </Button>
             <Button
               variant="outline"
               onClick={handleRefreshTradeList}
-              className="w-full sm:w-auto border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+              className="w-full sm:w-auto border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:shadow-[0_0_10px_rgba(0,245,255,0.2)] btn-mechanical"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
-              刷新列表
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSettingsApiKey('');
-                setSettingsApiSecret('');
-                setIsSettingsDialogOpen(true);
-              }}
-              className="w-full sm:w-auto border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-              API 设置
+              REFRESH
             </Button>
           </div>
         </div>
 
         {/* 资产余额卡片 */}
-        <Card className="border-amber-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
-          <CardHeader className="border-b border-amber-500/20">
+        <Card className="border-cyan-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(0,245,255,0.15)] backdrop-blur-sm data-panel">
+          <CardHeader className="border-b border-cyan-500/20">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">资产余额</CardTitle>
-                <CardDescription className="text-amber-500/60">当前账户总余额</CardDescription>
+                <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-2">
+                  ⚙ 资产余额
+                </CardTitle>
+                <CardDescription className="text-cyan-500/60 font-mono text-xs">ASSET BALANCE MONITOR</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 {/* 账户选择 */}
@@ -939,80 +916,105 @@ export default function TradingApp() {
           </CardHeader>
           <CardContent className="pt-4 sm:pt-6">
             <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="text-3xl sm:text-4xl font-bold text-amber-400">{fmt(balance)}</div>
+              <div className="text-3xl sm:text-4xl font-bold text-white glow-cyan flex items-center gap-2">
+                ⚙ {fmt(balance)}
+                <span className="text-sm text-cyan-400 font-mono">USD</span>
+              </div>
               <div className="flex gap-2">
                 <Dialog open={isDepositDialogOpen} onOpenChange={setIsDepositDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">入金</Button>
+                    <Button className="bg-cyan-600 hover:bg-cyan-700 text-white font-mono glow-cyan btn-mechanical">
+                      ⬇ DEPOSIT
+                    </Button>
                   </DialogTrigger>
-                  <DialogContent className="border-amber-500/30 bg-gray-900 text-white">
+                  <DialogContent className="border-cyan-500/30 bg-gray-900 text-white max-w-md data-panel">
                     <DialogHeader>
-                      <DialogTitle className="bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">入金</DialogTitle>
-                      <DialogDescription className="text-amber-500/60">请输入入金金额和日期</DialogDescription>
+                      <DialogTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-2">
+                        ⚙ DEPOSIT
+                      </DialogTitle>
+                      <DialogDescription className="text-cyan-500/60 font-mono text-xs">
+                        DEPOSIT FUNDS
+                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
-                        <Label htmlFor="deposit-amount" className="text-amber-400">金额</Label>
+                        <Label htmlFor="deposit-amount" className="text-cyan-400 font-mono text-xs">[ AMOUNT ]</Label>
                         <Input
                           id="deposit-amount"
                           type="number"
-                          placeholder="请输入金额"
+                          placeholder="0.00"
                           value={fundAmount}
                           onChange={(e) => setFundAmount(e.target.value)}
-                          className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
+                          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500 font-mono"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="deposit-date" className="text-amber-400">日期</Label>
+                        <Label htmlFor="deposit-date" className="text-cyan-400 font-mono text-xs">[ DATE ]</Label>
                         <Input
                           id="deposit-date"
                           type="date"
                           value={fundDate}
                           onChange={(e) => setFundDate(e.target.value)}
-                          className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
+                          className="border-cyan-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-cyan-500 font-mono"
                         />
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold" onClick={() => handleAddFund('deposit')}>确认入金</Button>
+                      <Button 
+                        className="bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-700 hover:to-blue-800 text-white font-semibold font-mono glow-cyan"
+                        onClick={() => handleAddFund('deposit')}
+                      >
+                        ⚙ CONFIRM
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
 
                 <Dialog open={isWithdrawDialogOpen} onOpenChange={setIsWithdrawDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button variant="destructive" className="bg-red-600 hover:bg-red-700">出金</Button>
+                    <Button variant="destructive" className="bg-red-600/80 hover:bg-red-700/80 text-white font-mono glow-red btn-mechanical">
+                      ⚠ WITHDRAW
+                    </Button>
                   </DialogTrigger>
-                  <DialogContent className="border-red-500/30 bg-gray-900 text-white">
+                  <DialogContent className="border-red-500/30 bg-gray-900 text-white max-w-md data-panel">
                     <DialogHeader>
-                      <DialogTitle className="bg-gradient-to-r from-red-400 to-orange-500 bg-clip-text text-transparent">出金</DialogTitle>
-                      <DialogDescription className="text-red-500/60">请输入出金金额和日期</DialogDescription>
+                      <DialogTitle className="bg-gradient-to-r from-red-400 to-orange-500 bg-clip-text text-transparent flex items-center gap-2">
+                        ⚠ WITHDRAW
+                      </DialogTitle>
+                      <DialogDescription className="text-red-500/60 font-mono text-xs">
+                        WITHDRAW FUNDS
+                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
-                        <Label htmlFor="withdraw-amount" className="text-red-400">金额</Label>
+                        <Label htmlFor="withdraw-amount" className="text-red-400 font-mono text-xs">[ AMOUNT ]</Label>
                         <Input
                           id="withdraw-amount"
                           type="number"
-                          placeholder="请输入金额"
+                          placeholder="0.00"
                           value={fundAmount}
                           onChange={(e) => setFundAmount(e.target.value)}
-                          className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500"
+                          className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500 font-mono"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="withdraw-date" className="text-red-400">日期</Label>
+                        <Label htmlFor="withdraw-date" className="text-red-400 font-mono text-xs">[ DATE ]</Label>
                         <Input
                           id="withdraw-date"
                           type="date"
                           value={fundDate}
                           onChange={(e) => setFundDate(e.target.value)}
-                          className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500"
+                          className="border-red-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-red-500 font-mono"
                         />
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button className="bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700" onClick={() => handleAddFund('withdraw')}>确认出金</Button>
+                      <Button 
+                        className="bg-gradient-to-r from-red-600 to-orange-700 hover:from-red-700 hover:to-orange-800 text-white font-semibold font-mono glow-red"
+                        onClick={() => handleAddFund('withdraw')}
+                      >
+                        ⚠ CONFIRM
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -1022,26 +1024,26 @@ export default function TradingApp() {
             {/* 累计入金和出金 */}
             <div className="mt-4 space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded border border-green-500/30 bg-green-500/10 p-2 text-center">
-                  <div className="text-xs text-green-400/70">累计入金</div>
+                <div className="rounded border border-green-500/30 bg-green-500/10 p-2 text-center data-panel relative">
+                  <div className="text-xs text-green-400/70 font-mono">[ DEPOSIT ]</div>
                   <div className="text-sm font-semibold text-green-400">{fmt(totalDeposit)}</div>
                 </div>
-                <div className="rounded border border-red-500/30 bg-red-500/10 p-2 text-center">
-                  <div className="text-xs text-red-400/70">累计出金</div>
+                <div className="rounded border border-red-500/30 bg-red-500/10 p-2 text-center data-panel relative">
+                  <div className="text-xs text-red-400/70 font-mono">[ WITHDRAW ]</div>
                   <div className="text-sm font-semibold text-red-400">{fmt(totalWithdraw)}</div>
                 </div>
               </div>
               
               {/* 最近出入金记录 */}
               {fundRecords.length > 0 && (
-                <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2">
-                  <div className="text-xs text-amber-400/70 mb-2">最近记录</div>
+                <div className="rounded border border-cyan-500/20 bg-cyan-500/5 p-2 data-panel">
+                  <div className="text-xs text-cyan-400/70 mb-2 font-mono">[ RECENT ]</div>
                   <div className="space-y-1 max-h-[72px] overflow-y-auto">
                     {fundRecords.map((record) => (
                       <div key={record.id} className="flex items-center justify-between rounded bg-gray-800/50 px-2 py-1">
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs ${record.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
-                            {record.type === 'deposit' ? '入金' : '出金'}
+                          <span className={`text-xs font-mono ${record.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
+                            {record.type === 'deposit' ? '⚙ +' : '⚠ -'}
                           </span>
                           <span className="text-xs text-white">
                             {fmt(record.amount)}
@@ -1073,16 +1075,16 @@ export default function TradingApp() {
 
         {/* 账户资产走势图（可折叠） */}
         <Collapsible open={isAssetChartOpen} onOpenChange={setIsAssetChartOpen} className="mt-4">
-          <Card className="border-amber-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
+          <Card className="border-cyan-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(0,245,255,0.1)] backdrop-blur-sm data-panel">
             <CollapsibleTrigger asChild>
-              <CardHeader className="border-b border-amber-500/20 cursor-pointer hover:bg-amber-500/5 transition-colors">
+              <CardHeader className="border-b border-cyan-500/20 cursor-pointer hover:bg-cyan-500/5 transition-colors">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">
-                      账户资产走势
+                    <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-2">
+                      ⚙ {isAssetChartOpen ? '资产走势' : '📊 资产走势'}
                     </CardTitle>
-                    <CardDescription className="text-amber-500/60">
-                      资产余额走势 - 点击{isAssetChartOpen ? '收起' : '展开'}
+                    <CardDescription className="text-cyan-500/60 font-mono text-xs">
+                      ASSET TREND {isAssetChartOpen ? '▼' : '▶'}
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1178,509 +1180,361 @@ export default function TradingApp() {
           </Card>
         </Collapsible>
 
-        {/* 我的交易数据 */}
-        <Card className="border-amber-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
-          <CardHeader className="border-b border-amber-500/20">
-            <CardTitle className="bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">我的交易数据</CardTitle>
-            <CardDescription className="text-amber-500/60">交易统计信息</CardDescription>
+        {/* 交易统计面板 */}
+        <Card className="border-cyan-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(0,245,255,0.1)] backdrop-blur-sm data-panel relative overflow-hidden">
+          <CardHeader className="border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent relative">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-3xl"></div>
+            <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-2">
+              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(0,245,255,0.8)]"></span>
+              ⚙ 交易统计
+            </CardTitle>
+            <CardDescription className="text-cyan-500/60 font-mono text-xs">
+              TRADING STATISTICS MONITOR
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {/* 时间段统计卡片 */}
-            <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {(() => {
-                // 每个卡片的选项
-                const periodOptions = [
-                  [
-                    { label: '今天', days: 0 },
-                    { label: '三天', days: 2 },
-                    { label: '五天', days: 4 },
-                  ],
-                  [
-                    { label: '三天', days: 2 },
-                    { label: '七天', days: 6 },
-                    { label: '十天', days: 9 },
-                    { label: '十五天', days: 14 },
-                  ],
-                  [
-                    { label: '一周', days: 6 },
-                    { label: '两周', days: 13 },
-                    { label: '三周', days: 20 },
-                    { label: '四周', days: 27 },
-                  ],
-                  [
-                    { label: '一月', days: 29 },
-                    { label: '二月', days: 59 },
-                    { label: '三月', days: 89 },
-                  ],
-                ];
+            {/* 时间段统计卡片 - 机械仪表盘风格 */}
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-1 h-4 bg-cyan-400 rounded-full"></span>
+                <span className="text-sm font-mono text-cyan-400/80">[ PERIOD STATS ]</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(() => {
+                  const periodOptions = [
+                    [
+                      { label: 'TODAY', days: 0 },
+                      { label: '3.DAY', days: 2 },
+                      { label: '5.DAY', days: 4 },
+                    ],
+                    [
+                      { label: '3.DAY', days: 2 },
+                      { label: '7.DAY', days: 6 },
+                      { label: '10.DAY', days: 9 },
+                      { label: '15.DAY', days: 14 },
+                    ],
+                    [
+                      { label: '1.WEEK', days: 6 },
+                      { label: '2.WEEK', days: 13 },
+                      { label: '3.WEEK', days: 20 },
+                      { label: '4.WEEK', days: 27 },
+                    ],
+                    [
+                      { label: '1.MONTH', days: 29 },
+                      { label: '2.MONTH', days: 59 },
+                      { label: '3.MONTH', days: 89 },
+                    ],
+                  ];
 
-                const getLabelByDays = (options: {label: string, days: number}[], days: number) => {
-                  const found = options.find(o => o.days === days);
-                  return found ? found.label : options[0].label;
-                };
+                  const getLabelByDays = (options: {label: string, days: number}[], days: number) => {
+                    // 增强健壮性：检查空数组
+                    if (!options || options.length === 0) return 'N/A';
+                    const found = options.find(o => o.days === days);
+                    return found ? found.label : options[0].label;
+                  };
 
-                return periodSelections.map((selection, index) => {
-                  const options = periodOptions[index];
-                  const label = getLabelByDays(options, selection.days);
-                  const stats = periodStats[index];
+                  return periodSelections.map((selection, index) => {
+                    const options = periodOptions[index];
+                    const label = getLabelByDays(options, selection.days);
+                    const stats = periodStats[index];
 
-                  return (
-                    <div
-                      key={index}
-                      className="rounded-lg border border-amber-500/20 bg-gray-800/60 p-3 text-center"
-                    >
-                      <Select
-                        value={String(selection.days)}
-                        onValueChange={(value) => {
-                          const newSelections = [...periodSelections];
-                          newSelections[index] = { id: index, days: Number(value) };
-                          setPeriodSelections(newSelections);
-                        }}
+                    return (
+                      <div
+                        key={index}
+                        className="relative rounded-lg border border-cyan-500/30 bg-gray-800/80 p-3 text-center data-panel hover:border-cyan-500/50 transition-all duration-300 hover:shadow-[0_0_15px_rgba(0,245,255,0.2)]"
                       >
-                        <SelectTrigger className="w-full h-8 text-base font-semibold text-amber-400 border-0 bg-transparent p-0 justify-center hover:text-amber-300 focus:ring-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="border-amber-500/30 bg-gray-800">
-                          {options.map((option) => (
-                            <SelectItem key={option.days} value={String(option.days)} className="text-white hover:bg-gray-700">
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="space-y-1.5 mt-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">次数:</span>
-                          <span className="text-white font-medium">{stats.count}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">盈亏:</span>
-                          <span className={`font-medium ${stats.totalPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {stats.totalPL >= 0 ? '+' : ''}{fmt(stats.totalPL)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">胜率:</span>
-                          <span className="text-white font-medium">{stats.winRate}%</span>
+                        {/* 装饰角标 */}
+                        <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-500/40"></div>
+                        <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-500/40"></div>
+                        
+                        <Select
+                          value={String(selection.days)}
+                          onValueChange={(value) => {
+                            const newSelections = [...periodSelections];
+                            newSelections[index] = { id: index, days: Number(value) };
+                            setPeriodSelections(newSelections);
+                          }}
+                        >
+                          <SelectTrigger className="w-full h-8 text-sm font-bold font-mono text-cyan-400 border-0 bg-transparent p-0 justify-center hover:text-cyan-300 focus:ring-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="border-cyan-500/30 bg-gray-800">
+                            {options.map((option) => (
+                              <SelectItem key={option.days} value={String(option.days)} className="text-white hover:bg-gray-700 font-mono text-xs">
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="space-y-1.5 mt-3 border-t border-cyan-500/20 pt-2">
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-gray-500">COUNT:</span>
+                            <span className="text-white font-semibold">{stats.count}</span>
+                          </div>
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-gray-500">P/L:</span>
+                            <span className={`font-bold ${stats.totalPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {stats.totalPL >= 0 ? '+' : ''}{fmt(stats.totalPL)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-gray-500">WIN:</span>
+                            <span className="text-cyan-400 font-bold">{stats.winRate}%</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                });
-              })()}
+                    );
+                  });
+                })()}
+              </div>
             </div>
             
-            <div className="border-t border-amber-500/20 pt-4">
-            <div className="mb-4 grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="filter-start-date" className="text-amber-400">开始日期</Label>
-                <Input
-                  id="filter-start-date"
-                  type="date"
-                  value={filterStartDate}
-                  onChange={(e) => setFilterStartDate(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500"
-                />
+            {/* 日期筛选区域 */}
+            <div className="border-t border-cyan-500/20 pt-4">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-1 h-4 bg-amber-400 rounded-full"></span>
+                <span className="text-sm font-mono text-amber-400/80">[ DATE FILTER ]</span>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="filter-end-date" className="text-amber-400">结束日期</Label>
-                <Input
-                  id="filter-end-date"
-                  type="date"
-                  value={filterEndDate}
-                  onChange={(e) => setFilterEndDate(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500"
-                />
+              
+              <div className="mb-4 grid grid-cols-2 gap-4">
+                <div className="space-y-2 relative">
+                  <Label htmlFor="filter-start-date" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full"></span>
+                    START.DATE
+                  </Label>
+                  <Input
+                    id="filter-start-date"
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    aria-label="开始日期筛选"
+                    className={CYAN_INPUT_CLASSES}
+                  />
+                </div>
+                <div className="space-y-2 relative">
+                  <Label htmlFor="filter-end-date" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full"></span>
+                    END.DATE
+                  </Label>
+                  <Input
+                    id="filter-end-date"
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    aria-label="结束日期筛选"
+                    className="border-cyan-500/30 bg-gray-800 text-cyan-300 font-mono focus:border-cyan-500 focus:shadow-[0_0_10px_rgba(0,245,255,0.2)]"
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* 快捷日期选择 */}
-            <div className="mb-4 flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickDateFilter('week')}
-                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-              >
-                一周
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickDateFilter('month')}
-                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-              >
-                一月
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickDateFilter('3month')}
-                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-              >
-                三月
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickDateFilter('halfYear')}
-                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-              >
-                半年
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickDateFilter('year')}
-                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-              >
-                一年
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setFilterStartDate('');
-                  setFilterEndDate('');
-                }}
-                className="text-gray-400 hover:text-gray-300 hover:bg-gray-700/50"
-              >
-                清除筛选
-              </Button>
-            </div>
+              {/* 快捷日期选择 */}
+              <div className="mb-6 flex flex-wrap gap-2">
+                <span className="text-xs font-mono text-gray-500 self-center mr-2">QUICK:</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickDateFilter('week')}
+                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 font-mono text-xs bg-emerald-500/5"
+                >
+                  1W
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickDateFilter('month')}
+                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 font-mono text-xs bg-emerald-500/5"
+                >
+                  1M
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickDateFilter('3month')}
+                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 font-mono text-xs bg-emerald-500/5"
+                >
+                  3M
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickDateFilter('halfYear')}
+                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 font-mono text-xs bg-emerald-500/5"
+                >
+                  6M
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickDateFilter('year')}
+                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 font-mono text-xs bg-emerald-500/5"
+                >
+                  1Y
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  className="text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 font-mono text-xs"
+                >
+                  RESET
+                </Button>
+              </div>
 
-            {/* 手动交易统计（仅在手动交易标签页显示） */}
-            {tradeSourceTab === 'manual' && (
-              <>
-            {/* 盈利统计 */}
-            <div className="mb-4">
-              <div className="mb-2 text-sm text-green-400">盈利统计</div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
-                  <div className="text-2xl font-bold text-green-400">
-                    {fmt(filteredStats.winTotal)}
+              {/* 盈亏统计区域 */}
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-1 h-4 bg-green-500 rounded-full"></span>
+                <span className="text-sm font-mono text-green-400/80">[ WIN STATS ]</span>
+              </div>
+              
+              {/* 盈利统计 */}
+              <div className="mb-4 grid grid-cols-2 gap-4">
+                <div className="relative rounded-lg border border-green-500/30 bg-green-500/5 p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-green-500/60 mb-1">[ AMOUNT ]</div>
+                    <div className="text-2xl font-bold font-mono text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.5)]">
+                      +{fmt(filteredStats.winTotal)}
+                    </div>
+                    <div className="text-xs font-mono text-green-500/60 mt-1">WIN.AMOUNT</div>
                   </div>
-                  <div className="text-sm text-green-400/70">盈利金额</div>
                 </div>
-                <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-center">
-                  <div className="text-2xl font-bold text-green-400">
-                    {filteredStats.winCount}
+                <div className="relative rounded-lg border border-green-500/30 bg-green-500/5 p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-green-500/60 mb-1">[ COUNT ]</div>
+                    <div className="text-2xl font-bold font-mono text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.5)]">
+                      {filteredStats.winCount}
+                    </div>
+                    <div className="text-xs font-mono text-green-500/60 mt-1">WIN.TIMES</div>
                   </div>
-                  <div className="text-sm text-green-400/70">盈利次数</div>
                 </div>
               </div>
-            </div>
 
-            {/* 亏损统计 */}
-            <div className="mb-4">
-              <div className="mb-2 text-sm text-red-400">亏损统计</div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
-                  <div className="text-2xl font-bold text-red-400">
-                    {fmt(filteredStats.lossTotal)}
+              {/* 亏损统计 */}
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-1 h-4 bg-red-500 rounded-full"></span>
+                <span className="text-sm font-mono text-red-400/80">[ LOSS STATS ]</span>
+              </div>
+              
+              <div className="mb-4 grid grid-cols-2 gap-4">
+                <div className="relative rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-red-500/60 mb-1">[ AMOUNT ]</div>
+                    <div className="text-2xl font-bold font-mono text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.5)]">
+                      {fmt(filteredStats.lossTotal)}
+                    </div>
+                    <div className="text-xs font-mono text-red-500/60 mt-1">LOSS.AMOUNT</div>
                   </div>
-                  <div className="text-sm text-red-400/70">亏损金额</div>
                 </div>
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center">
-                  <div className="text-2xl font-bold text-red-400">
-                    {filteredStats.lossCount}
+                <div className="relative rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-red-500/60 mb-1">[ COUNT ]</div>
+                    <div className="text-2xl font-bold font-mono text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.5)]">
+                      {filteredStats.lossCount}
+                    </div>
+                    <div className="text-xs font-mono text-red-500/60 mt-1">LOSS.TIMES</div>
                   </div>
-                  <div className="text-sm text-red-400/70">亏损次数</div>
                 </div>
               </div>
-            </div>
-              </>
-            )}
 
-            {/* Binance 期权信息提示 */}
-            {tradeSourceTab === 'binance' && (
-              <div className="mb-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
-                <div className="flex items-center gap-2 text-blue-400 mb-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-6h2v6zm0-8h-2V7h2v2zm4 8h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                  </svg>
-                  <span className="font-medium">Binance 期权成交记录</span>
+              {/* 总体统计 */}
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-1 h-4 bg-amber-400 rounded-full"></span>
+                <span className="text-sm font-mono text-amber-400/80">[ TOTAL STATS ]</span>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <div className="relative rounded-lg border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-transparent p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500/50 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-cyan-500/60 mb-1">[ TOTAL P/L ]</div>
+                    <div className={`text-2xl font-bold font-mono ${filteredStats.total >= 0 ? 'text-green-400' : 'text-red-400'} drop-shadow-[0_0_8px_currentColor]`}>
+                      {filteredStats.total >= 0 ? '+' : ''}{fmt(filteredStats.total)}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-sm text-blue-300/70 space-y-1">
-                  <p>• 数据来自 Binance EAPI 期权账户，实时同步</p>
-                  <p>• 点击右上角「API 设置」配置 Binance API 凭证</p>
-                  <p>• 以下记录为只读数据，无法编辑或删除</p>
-                  {binanceOptionsStatus.count > 0 && (
-                    <p className="font-medium text-blue-300">当前显示 {filteredTrades.length} 笔成交记录</p>
-                  )}
+                <div className="relative rounded-lg border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-transparent p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500/50 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-cyan-500/60 mb-1">[ TRADE COUNT ]</div>
+                    <div className="text-2xl font-bold font-mono text-cyan-400 drop-shadow-[0_0_8px_rgba(0,245,255,0.5)]">
+                      {filteredTrades.length}
+                    </div>
+                  </div>
+                </div>
+                <div className="relative rounded-lg border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-transparent p-4 text-center data-panel overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500/50 to-transparent"></div>
+                  <div className="relative">
+                    <div className="text-xs font-mono text-cyan-500/60 mb-1">[ WIN RATE ]</div>
+                    <div className="text-2xl font-bold font-mono text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]">
+                      {filteredStats.winRate}%
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
-
-            {/* 总体统计 */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-              <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
-                <div className={`text-xl sm:text-2xl font-bold ${filteredStats.total >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {filteredStats.total >= 0 ? '+' : ''}{fmt(filteredStats.total)}
-                </div>
-                <div className="text-xs sm:text-sm text-amber-500/60">总盈亏</div>
-              </div>
-              <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
-                <div className="text-xl sm:text-2xl font-bold text-amber-400">{filteredTrades.length}</div>
-                <div className="text-xs sm:text-sm text-amber-500/60">交易次数</div>
-              </div>
-              <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-3 sm:p-4 text-center backdrop-blur-sm">
-                <div className="text-xl sm:text-2xl font-bold text-amber-400">
-                  {filteredStats.winRate}%
-                </div>
-                <div className="text-xs sm:text-sm text-amber-500/60">胜率</div>
-              </div>
-            </div>
             </div>
           </CardContent>
         </Card>
-
-        {/* 添加交易记录 */}
-        <Dialog open={isTradeDialogOpen} onOpenChange={setIsTradeDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="w-full bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold shadow-[0_0_20px_rgba(234,179,8,0.3)]" size="lg">
-              添加交易记录
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="border-amber-500/30 bg-gray-900 text-white max-h-[90vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle className="bg-gradient-to-r from-amber-400 to-blue-500 bg-clip-text text-transparent">添加交易记录</DialogTitle>
-              <DialogDescription className="text-amber-500/60">填写交易信息</DialogDescription>
-            </DialogHeader>
-            <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
-              <div className="space-y-2">
-                <Label htmlFor="symbol" className="text-amber-400">交易品种</Label>
-                <Input
-                  id="symbol"
-                  placeholder="例如：BTC/USDT"
-                  value={symbol}
-                  onChange={(e) => setSymbol(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="trade-date" className="text-amber-400">开仓日期</Label>
-                <Input
-                  id="trade-date"
-                  type="datetime-local"
-                  value={openDateTime}
-                  onChange={(e) => setOpenDateTime(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
-                />
-              </div>
-
-              {/* 交易分级系统 */}
-              <div className="rounded-lg border border-amber-500/30 bg-gray-800/50 p-4 space-y-4">
-                <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
-                  <h3 className="text-lg font-semibold text-amber-400">交易分级系统</h3>
-                  <div className={`px-3 py-1 rounded-full border ${tradeLevel.level === 'A+' ? 'border-yellow-500/50 bg-yellow-500/10' : tradeLevel.level.startsWith('A') ? 'border-green-500/50 bg-green-500/10' : tradeLevel.level.startsWith('B') ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-500/50 bg-gray-500/10'}`}>
-                    <span className={`text-lg font-bold ${tradeLevel.color}`}>{tradeLevel.level}级</span>
-                  </div>
-                </div>
-                <p className="text-sm text-gray-400">{tradeLevel.description}</p>
-                <p className={`text-sm font-semibold ${tradeLevel.color}`}>建议：{tradeLevel.suggestion}</p>
-
-                {/* 量能状态 */}
-                <div className="space-y-2">
-                  <Label className="text-amber-400">量能状态</Label>
-                  <Select value={volumeTrend} onValueChange={(value) => setVolumeTrend(value as any)}>
-                    <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="border-amber-500/30 bg-gray-800">
-                      <SelectItem value="top_divergence" className="text-white hover:bg-gray-700">🔴 顶背离（价格上涨但成交量减少）</SelectItem>
-                      <SelectItem value="bottom_divergence" className="text-white hover:bg-gray-700">🟢 底背离（价格下跌但成交量减少）</SelectItem>
-                      <SelectItem value="no_trend" className="text-white hover:bg-gray-700">⚪ 无趋势</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* BOLL收缩时长 */}
-                <div className="space-y-2">
-                  <Label className="text-amber-400">BOLL收缩时长</Label>
-                  <Select value={bollContraction} onValueChange={(value) => setBollContraction(value as any)}>
-                    <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="border-amber-500/30 bg-gray-800">
-                      <SelectItem value="1h" className="text-white hover:bg-gray-700">⏱️ 1小时及以下收缩</SelectItem>
-                      <SelectItem value="2h" className="text-white hover:bg-gray-700">⏰ 2小时收缩</SelectItem>
-                      <SelectItem value="4h_plus" className="text-white hover:bg-gray-700">⌛ 4小时及以上收缩</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* 布林带宽度 */}
-                <div className="space-y-2">
-                  <Label className="text-amber-400">布林带宽度</Label>
-                  <Select value={bollWidth} onValueChange={(value) => setBollWidth(value as any)}>
-                    <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="border-amber-500/30 bg-gray-800">
-                      <SelectItem value="converged" className="text-white hover:bg-gray-700">✨ 粘合（上下轨靠得很近）</SelectItem>
-                      <SelectItem value="not_converged" className="text-white hover:bg-gray-700">📊 未粘合（布林带较宽）</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* 形态 */}
-                <div className="space-y-2">
-                  <Label className="text-amber-400">形态</Label>
-                  <Select value={pattern} onValueChange={(value) => setPattern(value as any)}>
-                    <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="border-amber-500/30 bg-gray-800">
-                      <SelectItem value="head_shoulders" className="text-white hover:bg-gray-700">🏔️ 头肩顶（底）</SelectItem>
-                      <SelectItem value="double_top_bottom" className="text-white hover:bg-gray-700">👥 双顶底</SelectItem>
-                      <SelectItem value="triple_top_bottom" className="text-white hover:bg-gray-700">⛰️ 三重顶（底）</SelectItem>
-                      <SelectItem value="triangle" className="text-white hover:bg-gray-700">🔺 三角</SelectItem>
-                      <SelectItem value="cup_handle" className="text-white hover:bg-gray-700">☕ 杯柄</SelectItem>
-                      <SelectItem value="channel" className="text-white hover:bg-gray-700">📉 通道</SelectItem>
-                      <SelectItem value="none" className="text-white hover:bg-gray-700">❌ 无</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="position" className="text-amber-400">仓位 (%)</Label>
-                <Select value={String(position)} onValueChange={(value) => setPosition(Number(value) as PositionType)}>
-                  <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-amber-500/30 bg-gray-800">
-                    {POSITION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt} value={String(opt)} className="text-white hover:bg-gray-700">
-                        {opt}%
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-amber-400">开仓金额</Label>
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-lg font-semibold text-amber-400">
-                  {fmt(openAmount)}
-                </div>
-                <p className="text-sm text-amber-500/60">开仓金额 = 仓位 × 资产余额</p>
-              </div>
-
-              <div className="flex items-center justify-between space-x-2 py-2">
-                <Label htmlFor="is-closed" className="text-amber-400 font-semibold">
-                  是否平仓
-                </Label>
-                <Switch
-                  id="is-closed"
-                  checked={isClosed}
-                  onCheckedChange={setIsClosed}
-                  className="data-[state=checked]:bg-amber-500 h-6 w-11 scale-110"
-                />
-              </div>
-
-              {isClosed && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="close-reason" className="text-amber-400">平仓原因</Label>
-                    <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
-                      <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="border-amber-500/30 bg-gray-800">
-                        <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
-                        <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
-                        <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {closeReason === 'other' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="remark" className="text-amber-400">备注</Label>
-                      <Textarea
-                        id="remark"
-                        placeholder="请输入备注信息"
-                        value={remark}
-                        onChange={(e) => setRemark(e.target.value)}
-                        className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="profit-loss" className="text-amber-400">盈亏金额</Label>
-                    <Input
-                      id="profit-loss"
-                      type="number"
-                      placeholder="正数为盈利，负数为亏损"
-                      value={profitLoss}
-                      onChange={(e) => setProfitLoss(e.target.value)}
-                      className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-            <DialogFooter className="mt-4 pt-4 border-t border-amber-500/20">
-              <Button className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold" onClick={handleAddTrade}>添加记录</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         {/* 编辑交易记录对话框 */}
         <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
           setIsEditDialogOpen(open);
           if (!open) { setEditingTrade(null); resetTradeForm(); }
         }}>
-          <DialogContent className="border-amber-500/30 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col">
+          <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-w-md max-h-[90vh] flex flex-col data-panel">
             <DialogHeader>
-              <DialogTitle className="bg-gradient-to-r from-amber-400 to-blue-500 bg-clip-text text-transparent">编辑交易记录</DialogTitle>
-              <DialogDescription className="text-amber-500/60">修改交易信息</DialogDescription>
+              <DialogTitle className="font-mono text-lg tracking-widest text-cyan-400 flex items-center gap-2">
+                <Cog6Tooth className="w-5 h-5 text-cyan-500" />
+                <span className="bg-gradient-to-r from-cyan-400 to-cyan-300 bg-clip-text text-transparent">EDIT TRADE RECORD</span>
+              </DialogTitle>
+              <DialogDescription className="text-cyan-500/50 font-mono text-xs tracking-wider">// MODIFY TRADE PARAMETERS</DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
               <div className="space-y-2">
-                <Label htmlFor="edit-symbol" className="text-amber-400">交易品种</Label>
+                <Label htmlFor="edit-symbol" className="text-cyan-400 font-mono text-xs tracking-wider">[ SYMBOL ] 交易品种</Label>
                 <Input
                   id="edit-symbol"
                   placeholder="例如：BTC/USDT"
                   value={symbol}
                   onChange={(e) => setSymbol(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
+                  className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-400 focus:shadow-[0_0_8px_rgba(0,245,255,0.15)]"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-trade-date" className="text-amber-400">开仓日期</Label>
+                <Label htmlFor="edit-trade-date" className="text-cyan-400 font-mono text-xs tracking-wider">[ OPEN TIME ] 开仓日期</Label>
                 <Input
                   id="edit-trade-date"
                   type="datetime-local"
                   value={openDateTime}
                   onChange={(e) => setOpenDateTime(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500"
+                  className="border-cyan-500/30 bg-gray-800 text-cyan-300 focus:border-cyan-400 focus:shadow-[0_0_8px_rgba(0,245,255,0.15)]"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-strategy" className="text-amber-400">入场策略</Label>
+                <Label htmlFor="edit-strategy" className="text-cyan-400 font-mono text-xs tracking-wider">[ STRATEGY ] 入场策略</Label>
                 <Input
                   id="edit-strategy"
                   placeholder="请输入入场策略"
                   value={strategy}
                   onChange={(e) => setStrategy(e.target.value)}
-                  className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
+                  className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-400 focus:shadow-[0_0_8px_rgba(0,245,255,0.15)]"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-position" className="text-amber-400">仓位 (%)</Label>
+                <Label htmlFor="edit-position" className="text-cyan-400 font-mono text-xs tracking-wider">[ POSITION ] 仓位</Label>
                 <Select value={String(position)} onValueChange={(value) => setPosition(Number(value) as PositionType)}>
-                  <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
+                  <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-cyan-300 focus:border-cyan-400">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="border-amber-500/30 bg-gray-800">
+                  <SelectContent className="border-cyan-500/30 bg-gray-800">
                     {POSITION_OPTIONS.map((opt) => (
                       <SelectItem key={opt} value={String(opt)} className="text-white hover:bg-gray-700">
                         {opt}%
@@ -1691,33 +1545,34 @@ export default function TradingApp() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-amber-400">开仓金额</Label>
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-lg font-semibold text-amber-400">
+                <Label className="text-cyan-400 font-mono text-xs tracking-wider">[ AMOUNT ] 开仓金额</Label>
+                <div className="data-panel rounded-md border border-cyan-500/30 px-3 py-2 text-lg font-semibold text-cyan-400 bg-gradient-to-r from-cyan-500/10 via-transparent to-cyan-500/5 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent pointer-events-none" />
                   {fmt(openAmount)}
                 </div>
               </div>
 
               <div className="flex items-center justify-between space-x-2 py-2">
-                <Label htmlFor="edit-is-closed" className="text-amber-400 font-semibold">
-                  是否平仓
+                <Label htmlFor="edit-is-closed" className="text-cyan-400 font-mono font-semibold text-xs tracking-wider">
+                  [ CLOSED ] 是否平仓
                 </Label>
                 <Switch
                   id="edit-is-closed"
                   checked={isClosed}
                   onCheckedChange={setIsClosed}
-                  className="data-[state=checked]:bg-amber-500 h-6 w-11 scale-110"
+                  className="data-[state=checked]:bg-cyan-500 h-6 w-11 scale-110"
                 />
               </div>
 
               {isClosed && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-close-reason" className="text-amber-400">平仓原因</Label>
+                    <Label htmlFor="edit-close-reason" className="text-cyan-400 font-mono text-xs tracking-wider">[ CLOSE REASON ] 平仓原因</Label>
                     <Select value={closeReason} onValueChange={(value) => setCloseReason(value as 'profit' | 'loss' | 'other')}>
-                      <SelectTrigger className="border-amber-500/30 bg-gray-800 text-white focus:border-amber-500">
+                      <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-cyan-300 focus:border-cyan-400">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="border-amber-500/30 bg-gray-800">
+                      <SelectContent className="border-cyan-500/30 bg-gray-800">
                         <SelectItem value="profit" className="text-white hover:bg-gray-700">正常止盈</SelectItem>
                         <SelectItem value="loss" className="text-white hover:bg-gray-700">正常止损</SelectItem>
                         <SelectItem value="other" className="text-white hover:bg-gray-700">其他原因</SelectItem>
@@ -1727,113 +1582,248 @@ export default function TradingApp() {
 
                   {closeReason === 'other' && (
                     <div className="space-y-2">
-                      <Label htmlFor="edit-remark" className="text-amber-400">备注</Label>
+                      <Label htmlFor="edit-remark" className="text-cyan-400 font-mono text-xs tracking-wider">[ REMARK ] 备注</Label>
                       <Textarea
                         id="edit-remark"
                         placeholder="请输入备注信息"
                         value={remark}
                         onChange={(e) => setRemark(e.target.value)}
-                        className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
+                        className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-400 focus:shadow-[0_0_8px_rgba(0,245,255,0.15)]"
                       />
                     </div>
                   )}
 
                   <div className="space-y-2">
-                    <Label htmlFor="edit-profit-loss" className="text-amber-400">盈亏金额</Label>
+                    <Label htmlFor="edit-profit-loss" className="text-cyan-400 font-mono text-xs tracking-wider">[ P&L ] 盈亏金额</Label>
                     <Input
                       id="edit-profit-loss"
                       type="number"
                       placeholder="正数为盈利，负数为亏损"
                       value={profitLoss}
                       onChange={(e) => setProfitLoss(e.target.value)}
-                      className="border-amber-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-amber-500"
+                      className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-400 focus:shadow-[0_0_8px_rgba(0,245,255,0.15)]"
                     />
                   </div>
                 </>
               )}
             </div>
-            <DialogFooter className="mt-4 pt-4 border-t border-amber-500/20">
-              <Button 
+            <DialogFooter className="mt-4 pt-4 border-t border-cyan-500/20 flex-row gap-2">
+              <Button
                 variant="outline"
-                className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 font-mono"
                 onClick={() => { setIsEditDialogOpen(false); setEditingTrade(null); resetTradeForm(); }}
               >
                 取消
               </Button>
-              <Button className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-semibold" onClick={handleSaveEdit}>保存修改</Button>
+              <Button className="bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-600 hover:to-cyan-500 text-black font-semibold font-mono tracking-wider" onClick={handleSaveEdit}>SAVE</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* 交易记录列表 */}
-        <Card className="border-amber-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(234,179,8,0.1)] backdrop-blur-sm">
-          <CardHeader className="border-b border-amber-500/20">
+        <Card className="border-cyan-500/30 bg-gray-900/90 shadow-[0_0_30px_rgba(0,245,255,0.1)] backdrop-blur-sm data-panel relative">
+          <CardHeader className="border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/5 to-transparent">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <CardTitle className="bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">交易记录</CardTitle>
-                <CardDescription className="text-amber-500/60">所有交易历史记录</CardDescription>
+                <CardTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-2">
+                  ⚙ 交易记录
+                </CardTitle>
+                <CardDescription className="text-cyan-500/60 font-mono text-xs">
+                  TRADING LOG
+                </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {/* 交易来源切换 */}
-                <div className="inline-flex rounded-lg border border-amber-500/30 bg-gray-800 p-0.5">
-                  <button
-                    onClick={() => setTradeSourceTab('manual')}
-                    className={`px-3 py-1.5 text-sm rounded-md transition-all ${
-                      tradeSourceTab === 'manual'
-                        ? 'bg-amber-500/20 text-amber-400 font-medium shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200'
-                    }`}
-                  >
-                    手动交易
-                  </button>
-                  <button
-                    onClick={() => setTradeSourceTab('binance')}
-                    className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1.5 ${
-                      tradeSourceTab === 'binance'
-                        ? 'bg-blue-500/20 text-blue-400 font-medium shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200'
-                    }`}
-                  >
-                    Binance 期权
-                    {!binanceOptionsStatus.configured && (
-                      <span className="text-xs text-gray-500">(未配置)</span>
-                    )}
-                  </button>
-                </div>
+                <Dialog open={isTradeDialogOpen} onOpenChange={setIsTradeDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold shadow-[0_0_15px_rgba(0,245,255,0.3)] btn-mechanical">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 bg-cyan-300 rounded-full animate-pulse"></span>
+                        ⚙ ADD TRADE
+                      </span>
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="border-cyan-500/40 bg-gray-900 text-white max-h-[90vh] flex flex-col data-panel relative">
+                    <DialogHeader>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg border border-cyan-500/40 bg-cyan-500/10 flex items-center justify-center">
+                          <span className="text-xl">⚙</span>
+                        </div>
+                        <div>
+                          <DialogTitle className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent font-mono">ADD TRADE RECORD</DialogTitle>
+                          <DialogDescription className="text-cyan-500/60 font-mono text-xs">FILL IN TRADE INFORMATION</DialogDescription>
+                        </div>
+                      </div>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="symbol" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                          <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                          [ SYMBOL ]
+                        </Label>
+                        <Input
+                          id="symbol"
+                          placeholder="BTC/USDT"
+                          value={symbol}
+                          onChange={(e) => setSymbol(e.target.value)}
+                          className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-500 focus:shadow-[0_0_10px_rgba(0,245,255,0.2)] font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                          <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                          [ TRADE LEVEL ]
+                        </Label>
+                        <div className={`text-lg font-bold ${tradeLevel.color}`}>{tradeLevel.level}</div>
+                        <div className="text-sm text-gray-400">{tradeLevel.description}</div>
+                        <div className="text-xs text-amber-400/70">{tradeLevel.suggestion}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="open-date" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                          <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                          [ OPEN DATE ]
+                        </Label>
+                        <Input
+                          id="open-date"
+                          type="datetime-local"
+                          value={openDateTime}
+                          onChange={(e) => setOpenDateTime(e.target.value)}
+                          className="border-cyan-500/30 bg-gray-800 text-cyan-300 focus:border-cyan-500 focus:shadow-[0_0_10px_rgba(0,245,255,0.2)] font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="position" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                          <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                          [ POSITION % ]
+                        </Label>
+                        <Select value={String(position)} onValueChange={(value) => setPosition(Number(value) as PositionType)}>
+                          <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500 font-mono">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="border-cyan-500/30 bg-gray-800">
+                            {POSITION_OPTIONS.map((opt) => (
+                              <SelectItem key={opt} value={String(opt)} className="text-white hover:bg-gray-700 font-mono">
+                                {opt}%
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="text-sm text-gray-400">开仓金额: <span className="text-cyan-400 font-semibold">${openAmount.toFixed(2)}</span></div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="is-closed" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                          <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                          [ CLOSED ]
+                        </Label>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="is-closed"
+                            checked={isClosed}
+                            onCheckedChange={setIsClosed}
+                            className="data-[state=checked]:bg-cyan-500 h-6 w-11 scale-110"
+                          />
+                          <Label htmlFor="is-closed" className="text-gray-400 text-sm font-mono">
+                            {isClosed ? '已平仓' : '未平仓'}
+                          </Label>
+                        </div>
+                      </div>
+                      {isClosed && (
+                        <>
+                          <div className="space-y-2">
+                            <Label htmlFor="close-reason" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                              <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                              [ CLOSE REASON ]
+                            </Label>
+                            <Select value={closeReason} onValueChange={(value) => setCloseReason(value as CloseReason)}>
+                              <SelectTrigger className="border-cyan-500/30 bg-gray-800 text-white focus:border-cyan-500 font-mono">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="border-cyan-500/30 bg-gray-800">
+                                <SelectItem value="profit" className="text-white hover:bg-gray-700 font-mono text-xs">TAKE PROFIT</SelectItem>
+                                <SelectItem value="loss" className="text-white hover:bg-gray-700 font-mono text-xs">STOP LOSS</SelectItem>
+                                <SelectItem value="other" className="text-white hover:bg-gray-700 font-mono text-xs">OTHER</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {closeReason === 'other' && (
+                            <div className="space-y-2">
+                              <Label htmlFor="remark" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                                <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                                [ REMARK ]
+                              </Label>
+                              <Textarea
+                                id="remark"
+                                placeholder="Enter remark..."
+                                value={remark}
+                                onChange={(e) => setRemark(e.target.value)}
+                                className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-500 font-mono"
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <Label htmlFor="profit-loss" className="text-cyan-400 font-mono text-xs flex items-center gap-1">
+                              <span className="w-1 h-1 bg-cyan-400 rounded-full"></span>
+                              [ P/L AMOUNT ]
+                            </Label>
+                            <Input
+                              id="profit-loss"
+                              type="number"
+                              step="0.01"
+                              placeholder="+ profit / - loss"
+                              value={profitLoss}
+                              onChange={(e) => setProfitLoss(e.target.value)}
+                              aria-label="盈亏金额"
+                              className="border-cyan-500/30 bg-gray-800 text-cyan-300 placeholder:text-gray-500 focus:border-cyan-500 focus:shadow-[0_0_10px_rgba(0,245,255,0.2)] font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <DialogFooter className="mt-4 pt-4 border-t border-cyan-500/20">
+                      <Button className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold font-mono shadow-[0_0_15px_rgba(0,245,255,0.3)]" onClick={handleAddTrade}>
+                        <span className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 bg-cyan-300 rounded-full animate-pulse"></span>
+                          ⚙ CONFIRM ADD
+                        </span>
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button
                       variant="outline"
-                      className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                      className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 font-mono text-xs"
                     >
-                      其他原因总结
+                      OTHER.REASON
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="border-blue-500/30 bg-gray-900 text-white max-w-md">
+                  <DialogContent className="border-blue-500/30 bg-gray-900 text-white max-w-md data-panel">
                     <DialogHeader>
                       <DialogTitle className="bg-gradient-to-r from-blue-400 to-cyan-500 bg-clip-text text-transparent">其他原因交易总结</DialogTitle>
-                      <DialogDescription className="text-blue-500/60">平仓原因为"其他原因"的交易记录</DialogDescription>
+                      <DialogDescription className="text-blue-500/60 font-mono text-xs">OTHER REASON SUMMARY</DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-3 max-h-[400px] overflow-y-auto">
                       {otherReasonTrades.length === 0 ? (
-                        <p className="text-center text-amber-500/50 py-4">暂无其他原因的交易记录</p>
+                        <p className="text-center text-cyan-500/50 py-4 font-mono">NO DATA</p>
                       ) : (
                         otherReasonTrades.map((trade, index) => (
                           <div key={trade.id}
-                            className={`p-3 rounded-lg border border-amber-500/20 bg-gray-800/50 ${index < otherReasonTrades.length - 1 ? 'mb-2' : ''}`}
+                            className={`p-3 rounded-lg border border-cyan-500/20 bg-gray-800/50 ${index < otherReasonTrades.length - 1 ? 'mb-2' : ''}`}
                           >
                             <div className="flex justify-between items-start mb-2">
-                              <span className="font-semibold text-white">{trade.symbol}</span>
-                              <span className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              <span className="font-semibold text-white font-mono">{trade.symbol}</span>
+                              <span className={`font-semibold font-mono ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
                               </span>
                             </div>
-                            <div className="text-sm text-gray-400 mb-1">
+                            <div className="text-sm text-gray-400 mb-1 font-mono">
                               {formatTradeDateTime(trade.date, trade.openTime)}
                             </div>
                             <div className="text-sm">
                               <span className="text-gray-400">原因：</span>
-                              <span className="bg-yellow-400 text-black font-semibold px-1 rounded">{trade.remark}</span>
+                              {trade.remark && (
+                                <span className="bg-yellow-400 text-black font-semibold px-1 rounded font-mono">{trade.remark}</span>
+                              )}
                             </div>
                           </div>
                         ))
@@ -1846,218 +1836,109 @@ export default function TradingApp() {
           </CardHeader>
           <CardContent>
             <div className={`${filteredTrades.length > 15 ? 'max-h-[600px] overflow-y-auto' : ''} overflow-x-auto`}>
-              {/* 根据数据来源显示不同表格 */}
-              {tradeSourceTab === 'binance' ? (
-                /* Binance 期权专用表格 */
-                <Table>
+              {/* 交易记录表格 */}
+              <Table className="font-mono text-sm">
                   <TableHeader className={filteredTrades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
-                    <TableRow>
-                      <TableHead className="text-blue-400">交易品种</TableHead>
-                      <TableHead className="text-blue-400">成交时间</TableHead>
-                      <TableHead className="text-blue-400">方向</TableHead>
-                      <TableHead className="text-blue-400">类型</TableHead>
-                      <TableHead className="text-blue-400">数量</TableHead>
-                      <TableHead className="text-blue-400">价格</TableHead>
-                      <TableHead className="text-blue-400">报价金额</TableHead>
-                      <TableHead className="text-blue-400">手续费</TableHead>
-                      <TableHead className="text-blue-400">已实现盈亏</TableHead>
-                      <TableHead className="text-blue-400">订单号</TableHead>
+                    <TableRow className="border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 to-transparent hover:bg-cyan-500/10">
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">品种.SYMBOL</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">开仓日期.DATE</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">入场策略.STRATEGY</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">仓位.POS</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">开仓金额.AMOUNT</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">盈亏.P/L</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">状态.STATUS</TableHead>
+                      <TableHead className="text-cyan-400 font-semibold border-b border-cyan-500/30 py-3">操作.ACTION</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredTrades.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center text-blue-500/50">
-                          暂无 Binance 期权成交记录
+                        <TableCell colSpan={8} className="text-center text-cyan-500/50 py-8">
+                          <div className="flex flex-col items-center gap-2">
+                            <span className="text-2xl">⚙</span>
+                            <span className="font-mono">NO TRADING RECORDS</span>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredTrades.map((trade) => {
-                        const isBinance = trade.source === 'binance-options';
-                        const sideColor = trade.side === 'BUY' ? 'text-green-400' : trade.side === 'SELL' ? 'text-red-400' : 'text-gray-400';
-                        const sideText = trade.side === 'BUY' ? '买入 (Buy)' : trade.side === 'SELL' ? '卖出 (Sell)' : '-';
-                        const contractTypeColor = trade.strategy?.includes('Call') ? 'text-green-400' : trade.strategy?.includes('Put') ? 'text-red-400' : 'text-gray-400';
-                        const contractTypeText = trade.strategy?.includes('Call') ? 'Call (看涨)' : trade.strategy?.includes('Put') ? 'Put (看跌)' : '-';
-                        const isMaker = trade.strategy?.includes('Maker');
-                        
+                        const parts = trade.strategy.split('/');
+                        const level = parts[0];
+                        const rest = parts.slice(1).join('/');
+                        const pl = Number(trade.profitLoss) || 0;
                         return (
                           <TableRow 
                             key={trade.id} 
-                            className="hover:bg-blue-500/5 border-blue-500/10"
+                            className="border-cyan-500/20 hover:bg-cyan-500/10 transition-all duration-200 hover:shadow-[0_0_10px_rgba(0,245,255,0.1)]"
                           >
-                            <TableCell className="font-medium text-white">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-semibold">{trade.symbol}</span>
-                                {isMaker && (
-                                  <span className="inline-flex items-center rounded-full bg-purple-500/20 border border-purple-500/40 px-1.5 py-0.5 text-[10px] font-medium text-purple-400 w-fit">
-                                    Maker
-                                  </span>
-                                )}
-                              </div>
+                            <TableCell className="font-medium text-amber-400 py-3">
+                              <span className="flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                {trade.symbol}
+                              </span>
                             </TableCell>
-                            <TableCell className="text-gray-300 text-sm">
-                              {formatTradeDateTime(trade.date, trade.openTime)}
+                            <TableCell className="text-gray-300 py-3">{formatTradeDateTime(trade.date, trade.openTime)}</TableCell>
+                            <TableCell className="text-white py-3">
+                              <span className={getLevelColor(level)}>{level}</span>
+                              {rest && <span className="text-gray-400">/{rest}</span>}
                             </TableCell>
-                            <TableCell className={`font-semibold ${sideColor}`}>
-                              {sideText}
+                            <TableCell className="text-amber-300 py-3">{trade.position}%</TableCell>
+                            <TableCell className="font-semibold text-amber-400 py-3">{fmt(trade.openAmount)}</TableCell>
+                            <TableCell className={`font-semibold py-3 ${pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              <span className={`flex items-center gap-1 ${pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                <span className={`text-xs ${pl >= 0 ? 'text-green-500' : 'text-red-500'}`}>{pl >= 0 ? '▲' : '▼'}</span>
+                                {pl >= 0 ? '+' : ''}{fmt(pl)}
+                              </span>
                             </TableCell>
-                            <TableCell className={`font-medium ${contractTypeColor}`}>
-                              {contractTypeText}
-                            </TableCell>
-                            <TableCell className="text-amber-300">
-                              {trade.quantity ? trade.quantity.toFixed(4) : '-'}
-                            </TableCell>
-                            <TableCell className="text-amber-300">
-                              {trade.price ? `$${trade.price.toFixed(4)}` : '-'}
-                            </TableCell>
-                            <TableCell className="font-semibold text-amber-400">
-                              ${trade.openAmount.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-red-400 text-sm">
-                              {trade.fee ? `-$${trade.fee.toFixed(4)}` : '-'}
-                            </TableCell>
-                            <TableCell className={`font-semibold ${(trade.profitLoss || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {(trade.profitLoss || 0) >= 0 ? '+' : ''}{trade.profitLoss ? `$${trade.profitLoss.toFixed(2)}` : '-'}
-                            </TableCell>
-                            <TableCell className="text-gray-400 text-xs">
-                              {trade.orderId ? (
-                                <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded" title={trade.orderId}>
-                                  {trade.orderId.slice(0, 8)}...
-                                </span>
-                              ) : '-'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              ) : (
-                /* 手动交易表格 */
-                <Table>
-                  <TableHeader className={filteredTrades.length > 15 ? 'sticky top-0 bg-gray-900 z-10' : ''}>
-                    <TableRow>
-                      <TableHead className="text-amber-400">交易品种</TableHead>
-                      <TableHead className="text-amber-400">开仓日期</TableHead>
-                      <TableHead className="text-amber-400">入场策略</TableHead>
-                      <TableHead className="text-amber-400">仓位</TableHead>
-                      <TableHead className="text-amber-400">开仓金额</TableHead>
-                      <TableHead className="text-amber-400">盈亏金额</TableHead>
-                      <TableHead className="text-amber-400">平仓状态</TableHead>
-                      <TableHead className="text-amber-400">平仓原因</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTrades.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center text-amber-500/50">
-                          暂无交易记录
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredTrades.map((trade) => {
-                        const isBinance = trade.source === 'binance-options';
-                        return (
-                          <TableRow 
-                            key={trade.id} 
-                            className="hover:bg-amber-500/5 border-amber-500/10"
-                          >
-                            <TableCell className="font-medium text-white">
-                              <div className="flex flex-col gap-0.5">
-                                <span>{trade.symbol}</span>
-                                {isBinance && (
-                                  <span className="inline-flex items-center rounded-full bg-blue-500/20 border border-blue-500/40 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 w-fit">
-                                    Binance
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-gray-300">{formatTradeDateTime(trade.date, trade.openTime)}</TableCell>
-                            <TableCell className="text-white">
-                              {isBinance ? (
-                                <span className="text-gray-300">{trade.strategy}</span>
-                              ) : (
-                                (() => {
-                                  const parts = trade.strategy.split('/');
-                                  const level = parts[0];
-                                  const rest = parts.slice(1).join('/');
-                                  return (
-                                    <>
-                                      <span className={getLevelColor(level)}>{level}</span>
-                                      {rest && <span className="text-gray-300">/{rest}</span>}
-                                    </>
-                                  );
-                                })()
-                              )}
-                            </TableCell>
-                            <TableCell className="text-amber-300">{isBinance ? '-' : `${trade.position}%`}</TableCell>
-                            <TableCell className="font-semibold text-amber-400">{fmt(trade.openAmount)}</TableCell>
-                            <TableCell className={`font-semibold ${(Number(trade.profitLoss) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {(Number(trade.profitLoss) || 0) >= 0 ? '+' : ''}{fmt(trade.profitLoss)}
-                            </TableCell>
-                            <TableCell>
-                              {isBinance ? (
-                                <span className="inline-flex items-center rounded-full bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 text-xs font-medium text-blue-400">
-                                  成交
-                                </span>
-                              ) : trade.isClosed ? (
-                                <span className="inline-flex items-center rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-medium text-green-400">
-                                  已平仓
+                            <TableCell className="py-3">
+                              {trade.isClosed ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-medium text-green-400">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+                                  CLOSED
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center rounded-full bg-gray-500/20 border border-gray-500/40 px-2.5 py-0.5 text-xs font-medium text-gray-400">
-                                  未平仓
+                                <span className="inline-flex items-center gap-1 rounded-full bg-gray-500/20 border border-gray-500/40 px-2.5 py-0.5 text-xs font-medium text-gray-400">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                  PENDING
                                 </span>
                               )}
                             </TableCell>
-                            <TableCell className="text-white">
+                            <TableCell className="py-3">
                               <div className="flex items-center justify-between">
-                                <span>
-                                  {isBinance
-                                    ? (() => {
-                                        const parts = [
-                                          trade.side === 'BUY' ? '买入' : trade.side === 'SELL' ? '卖出' : '',
-                                          trade.quantity ? `${trade.quantity} 张` : '',
-                                          trade.fee ? `手续费 $${(trade.fee).toFixed(4)}` : '',
-                                        ].filter(Boolean);
-                                        return <span className="text-blue-300 text-xs">{parts.join(' · ') || '币安期权成交'}</span>;
-                                      })()
-                                    : getCloseReasonComponent(trade.closeReason, trade.remark)
-                                  }
+                                <span className="text-sm text-gray-400">
+                                  {getCloseReasonComponent(trade.closeReason, trade.remark)}
                                 </span>
-                                {!isBinance && (
-                                  <Popover>
-                                    <PopoverTrigger asChild>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 w-7 p-0 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-32 p-2 bg-gray-900 border-cyan-500/30 data-panel" align="end">
+                                    <div className="flex flex-col gap-1">
                                       <Button
-                                        variant="ghost"
                                         size="sm"
-                                        className="h-7 w-7 p-0 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                                        variant="ghost"
+                                        className="w-full justify-start text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300 font-mono text-xs"
+                                        onClick={() => handleEditTrade(trade)}
                                       >
-                                        <MoreVertical className="h-4 w-4" />
+                                        ⚙ EDIT
                                       </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-32 p-2 bg-gray-900 border-amber-500/30" align="end">
-                                      <div className="flex flex-col gap-1">
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="w-full justify-start text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
-                                          onClick={() => handleEditTrade(trade)}
-                                        >
-                                          编辑
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="w-full justify-start text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                                          onClick={() => handleDeleteTrade(trade.id)}
-                                        >
-                                          删除
-                                        </Button>
-                                      </div>
-                                    </PopoverContent>
-                                  </Popover>
-                                )}
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="w-full justify-start text-red-400 hover:bg-red-500/10 hover:text-red-300 font-mono text-xs"
+                                        onClick={() => handleDeleteTrade(trade.id)}
+                                      >
+                                        ✕ DELETE
+                                      </Button>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -2066,104 +1947,9 @@ export default function TradingApp() {
                     )}
                   </TableBody>
                 </Table>
-              )}
             </div>
           </CardContent>
         </Card>
-
-        {/* Binance API 设置对话框 */}
-        <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
-          <DialogContent className="border-blue-500/30 bg-gray-900 text-white max-w-md">
-            <DialogHeader>
-              <DialogTitle className="bg-gradient-to-r from-blue-400 to-cyan-500 bg-clip-text text-transparent flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                </svg>
-                Binance API 设置
-              </DialogTitle>
-              <DialogDescription className="text-blue-500/60">
-                配置 Binance 期权 API 凭证以同步成交记录。凭证将安全保存到本地环境变量文件中。
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="settings-api-key" className="text-blue-400">API Key</Label>
-                <Input
-                  id="settings-api-key"
-                  placeholder="请输入 Binance API Key"
-                  value={settingsApiKey}
-                  onChange={(e) => setSettingsApiKey(e.target.value)}
-                  className="border-blue-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-blue-500"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="settings-api-secret" className="text-blue-400">API Secret</Label>
-                <Input
-                  id="settings-api-secret"
-                  type="password"
-                  placeholder="请输入 Binance API Secret"
-                  value={settingsApiSecret}
-                  onChange={(e) => setSettingsApiSecret(e.target.value)}
-                  className="border-blue-500/30 bg-gray-800 text-white placeholder:text-gray-500 focus:border-blue-500"
-                />
-              </div>
-              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-                <p className="text-xs text-blue-400/70">
-                  <strong className="text-blue-300">提示：</strong>请确保您的 API Key 具有期权账户只读权限。建议创建独立的白名单密钥，仅授予读取权限，不要授予提币或交易权限。
-                </p>
-              </div>
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                <p className="text-xs text-amber-400/70">
-                  <strong className="text-amber-300">注意：</strong>保存后需要刷新页面（或重启开发服务器）才能使新配置生效。
-                </p>
-              </div>
-            </div>
-            <DialogFooter className="gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsSettingsDialogOpen(false)}
-                className="border-gray-600 text-gray-400 hover:bg-gray-800"
-                disabled={isSavingSettings}
-              >
-                取消
-              </Button>
-              <Button
-                onClick={async () => {
-                  if (!settingsApiKey.trim() || !settingsApiSecret.trim()) {
-                    toast.error('请填写完整的 API Key 和 Secret');
-                    return;
-                  }
-                  setIsSavingSettings(true);
-                  try {
-                    const res = await fetch('/api/settings/save-env', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        BINANCE_OPTIONS_API_KEY: settingsApiKey.trim(),
-                        BINANCE_OPTIONS_API_SECRET: settingsApiSecret.trim(),
-                      }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || '保存失败');
-                    toast.success('API 凭证已保存，页面将刷新...');
-                    setIsSettingsDialogOpen(false);
-                    // 短暂延迟后刷新页面，让用户看到成功提示
-                    setTimeout(() => window.location.reload(), 1500);
-                  } catch (err: any) {
-                    toast.error('保存失败：' + (err.message || '未知错误'));
-                  } finally {
-                    setIsSavingSettings(false);
-                  }
-                }}
-                disabled={isSavingSettings}
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold"
-              >
-                {isSavingSettings ? '保存中...' : '保存并刷新'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );

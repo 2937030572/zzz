@@ -6,7 +6,6 @@ import { api } from '@/lib/api';
 export type PositionType = number;
 export type CloseReason = 'profit' | 'loss' | 'other' | 'pending';
 export type FundType = 'deposit' | 'withdraw';
-export type TradeSource = 'manual' | 'binance-options';
 export type VolumeTrend = 'top_divergence' | 'bottom_divergence' | 'no_trend';
 export type BollContraction = '1h' | '2h' | '4h_plus';
 export type BollWidth = 'converged' | 'not_converged';
@@ -32,16 +31,6 @@ export interface Trade {
   date: string;
   isClosed: boolean;
   accountId?: number;
-  source?: TradeSource;
-  exchange?: string;
-  isReadOnly?: boolean;
-  externalId?: string;
-  orderId?: string;
-  side?: string;
-  quantity?: number;
-  price?: number;
-  fee?: number;
-  executedAt?: string;
 }
 
 export interface FundRecord {
@@ -59,22 +48,6 @@ export interface Account {
   updated_at: string;
 }
 
-export interface BinanceOptionsStatus {
-  configured: boolean;
-  enabled: boolean;
-  count: number;
-  error: string | null;
-  lastSyncAt: string | null;
-}
-
-const DEFAULT_BINANCE_OPTIONS_STATUS: BinanceOptionsStatus = {
-  configured: false,
-  enabled: false,
-  count: 0,
-  error: null,
-  lastSyncAt: null,
-};
-
 // ── Hook ────────────────────────────────────────────────────────────────────
 
 export const useTradingData = (initialAccountId: number = 1) => {
@@ -83,7 +56,6 @@ export const useTradingData = (initialAccountId: number = 1) => {
   const [balance, setBalance] = useState<number>(0);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [fundRecords, setFundRecords] = useState<FundRecord[]>([]);
-  const [binanceOptionsStatus, setBinanceOptionsStatus] = useState<BinanceOptionsStatus>(DEFAULT_BINANCE_OPTIONS_STATUS);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,10 +73,6 @@ export const useTradingData = (initialAccountId: number = 1) => {
 
       setAccounts((accountsRes.accounts ?? []).filter(Boolean) as Account[]);
       setBalance(Number(balanceRes.balance) || 0);
-      setBinanceOptionsStatus({
-        ...DEFAULT_BINANCE_OPTIONS_STATUS,
-        ...((tradesRes.sources?.binanceOptions ?? {}) as Partial<BinanceOptionsStatus>),
-      });
 
       setTrades(
         ((tradesRes.trades ?? []) as Record<string, unknown>[])
@@ -122,16 +90,6 @@ export const useTradingData = (initialAccountId: number = 1) => {
             date: String(t.date ?? ''),
             isClosed: (t.isClosed as boolean) ?? true,
             accountId: t.accountId != null ? Number(t.accountId) : undefined,
-            source: (t.source as TradeSource) ?? 'manual',
-            exchange: t.exchange ? String(t.exchange) : undefined,
-            isReadOnly: Boolean(t.isReadOnly),
-            externalId: t.externalId ? String(t.externalId) : undefined,
-            orderId: t.orderId ? String(t.orderId) : undefined,
-            side: t.side ? String(t.side) : undefined,
-            quantity: t.quantity != null ? (Number(t.quantity) || 0) : undefined,
-            price: t.price != null ? (Number(t.price) || 0) : undefined,
-            fee: t.fee != null ? (Number(t.fee) || 0) : undefined,
-            executedAt: t.executedAt ? String(t.executedAt) : undefined,
           }))
       );
 
@@ -149,7 +107,6 @@ export const useTradingData = (initialAccountId: number = 1) => {
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load data';
-      setBinanceOptionsStatus(DEFAULT_BINANCE_OPTIONS_STATUS);
       setError(msg);
       console.error('Failed to load data:', err);
       return false;
@@ -172,7 +129,6 @@ export const useTradingData = (initialAccountId: number = 1) => {
     setTrades,
     fundRecords,
     setFundRecords,
-    binanceOptionsStatus,
     loading,
     error,
     loadData,

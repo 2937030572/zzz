@@ -54,73 +54,75 @@
     'Times New Roman', Times, serif;
 }
 
+/* 机械工业风格 - 主色调 */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.25rem;
+  --background: oklch(0.15 0.02 250);
+  --foreground: oklch(0.92 0.01 250);
+  --card: oklch(0.18 0.02 250);
+  --card-foreground: oklch(0.92 0.01 250);
+  --popover: oklch(0.18 0.02 250);
+  --popover-foreground: oklch(0.92 0.01 250);
+  --primary: oklch(0.75 0.18 195);
+  --primary-foreground: oklch(0.15 0.02 195);
+  --secondary: oklch(0.22 0.02 250);
+  --secondary-foreground: oklch(0.92 0.01 250);
+  --muted: oklch(0.22 0.02 250);
+  --muted-foreground: oklch(0.65 0.02 250);
+  --accent: oklch(0.85 0.15 45);
+  --accent-foreground: oklch(0.15 0.02 45);
+  --destructive: oklch(0.65 0.22 25);
+  --border: oklch(0.35 0.02 250);
+  --input: oklch(0.25 0.02 250);
+  --ring: oklch(0.75 0.18 195);
+  --chart-1: oklch(0.75 0.18 195);
+  --chart-2: oklch(0.65 0.18 145);
+  --chart-3: oklch(0.85 0.15 45);
+  --chart-4: oklch(0.75 0.18 285);
+  --chart-5: oklch(0.65 0.18 25);
+  --sidebar: oklch(0.12 0.02 250);
+  --sidebar-foreground: oklch(0.92 0.01 250);
+  --sidebar-primary: oklch(0.75 0.18 195);
+  --sidebar-primary-foreground: oklch(0.15 0.02 195);
+  --sidebar-accent: oklch(0.22 0.02 250);
+  --sidebar-accent-foreground: oklch(0.92 0.01 250);
+  --sidebar-border: oklch(0.35 0.02 250);
+  --sidebar-ring: oklch(0.75 0.18 195);
 }
 
+/* 暗色主题 - 机械深色 */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0.08 0.01 250);
+  --foreground: oklch(0.95 0.01 250);
+  --card: oklch(0.12 0.02 250);
+  --card-foreground: oklch(0.95 0.01 250);
+  --popover: oklch(0.12 0.02 250);
+  --popover-foreground: oklch(0.95 0.01 250);
+  --primary: oklch(0.75 0.18 195);
+  --primary-foreground: oklch(0.08 0.01 195);
+  --secondary: oklch(0.18 0.02 250);
+  --secondary-foreground: oklch(0.95 0.01 250);
+  --muted: oklch(0.18 0.02 250);
+  --muted-foreground: oklch(0.60 0.02 250);
+  --accent: oklch(0.80 0.15 45);
+  --accent-foreground: oklch(0.08 0.01 45);
+  --destructive: oklch(0.60 0.22 25);
+  --border: oklch(0.30 0.02 250);
+  --input: oklch(0.22 0.02 250);
+  --ring: oklch(0.75 0.18 195);
+  --chart-1: oklch(0.75 0.18 195);
+  --chart-2: oklch(0.65 0.18 145);
+  --chart-3: oklch(0.80 0.15 45);
+  --chart-4: oklch(0.75 0.18 285);
+  --chart-5: oklch(0.65 0.18 25);
+  --sidebar: oklch(0.10 0.02 250);
+  --sidebar-foreground: oklch(0.95 0.01 250);
+  --sidebar-primary: oklch(0.75 0.18 195);
+  --sidebar-primary-foreground: oklch(0.08 0.01 195);
+  --sidebar-accent: oklch(0.18 0.02 250);
+  --sidebar-accent-foreground: oklch(0.95 0.01 250);
+  --sidebar-border: oklch(0.30 0.02 250);
+  --sidebar-ring: oklch(0.75 0.18 195);
 }
 
 @layer base {
@@ -134,4 +136,226 @@
 
 body {
   @apply font-sans;
+}
+
+/* 机械风格增强 */
+
+/* 霓虹辉光效果 */
+.glow-cyan {
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.3),
+              0 0 20px rgba(0, 245, 255, 0.2),
+              0 0 30px rgba(0, 245, 255, 0.1);
+}
+
+.glow-orange {
+  box-shadow: 0 0 10px rgba(255, 165, 0, 0.3),
+              0 0 20px rgba(255, 165, 0, 0.2),
+              0 0 30px rgba(255, 165, 0, 0.1);
+}
+
+.glow-green {
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3),
+              0 0 20px rgba(0, 255, 136, 0.2),
+              0 0 30px rgba(0, 255, 136, 0.1);
+}
+
+/* 机械边框效果 */
+.border-mechanical {
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  position: relative;
+}
+
+.border-mechanical::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.5), transparent);
+}
+
+.border-mechanical::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.5), transparent);
+}
+
+/* 电路纹理背景 */
+.circuit-bg {
+  background-image: 
+    linear-gradient(90deg, rgba(0, 245, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(0, 245, 255, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* 扫描线效果 */
+.scanline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 245, 255, 0.02) 50%,
+    transparent 100%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  animation: scan 8s linear infinite;
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* 机械齿轮装饰 */
+.gear-decoration {
+  position: relative;
+}
+
+.gear-decoration::before {
+  content: '⚙';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  font-size: 20px;
+  color: rgba(0, 245, 255, 0.3);
+  animation: rotate 10s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 霓虹文字效果 */
+.text-neon {
+  text-shadow: 
+    0 0 5px currentColor,
+    0 0 10px currentColor,
+    0 0 20px currentColor;
+}
+
+/* 机械按钮效果 */
+.btn-mechanical {
+  background: linear-gradient(180deg, rgba(0, 245, 255, 0.1) 0%, transparent 100%);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-mechanical:hover {
+  background: linear-gradient(180deg, rgba(0, 245, 255, 0.2) 0%, rgba(0, 245, 255, 0.1) 100%);
+  border-color: rgba(0, 245, 255, 0.5);
+  box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
+}
+
+.btn-mechanical:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 5px rgba(0, 245, 255, 0.2);
+}
+
+/* 数据面板效果 */
+.data-panel {
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.05) 0%, rgba(0, 0, 0, 0.3) 100%);
+  border: 1px solid rgba(0, 245, 255, 0.2);
+  position: relative;
+}
+
+.data-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: 30px;
+  border-top: 2px solid rgba(0, 245, 255, 0.5);
+  border-left: 2px solid rgba(0, 245, 255, 0.5);
+}
+
+.data-panel::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 30px;
+  height: 30px;
+  border-bottom: 2px solid rgba(0, 245, 255, 0.5);
+  border-right: 2px solid rgba(0, 245, 255, 0.5);
+}
+
+/* 进度条机械效果 */
+.progress-mechanical {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-mechanical::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 8px,
+    rgba(0, 245, 255, 0.1) 8px,
+    rgba(0, 245, 255, 0.1) 10px
+  );
+}
+
+/* 表格机械风格 */
+.table-mechanical {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-mechanical th {
+  background: linear-gradient(180deg, rgba(0, 245, 255, 0.15) 0%, rgba(0, 245, 255, 0.05) 100%);
+  border-bottom: 2px solid rgba(0, 245, 255, 0.3);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table-mechanical td {
+  border-bottom: 1px solid rgba(0, 245, 255, 0.1);
+}
+
+.table-mechanical tr:hover td {
+  background: rgba(0, 245, 255, 0.05);
+}
+
+/* 滚动条机械风格 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(0, 245, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 245, 255, 0.4), rgba(0, 245, 255, 0.2));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(0, 245, 255, 0.6), rgba(0, 245, 255, 0.4));
 }

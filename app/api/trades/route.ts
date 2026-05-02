@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { fetchBinanceOptionsTrades } from '@/lib/binance';
 import supabase from '@/lib/supabase';
 
 /** 从 fund_records + trades 实时计算真实余额（不加 account_id 过滤，兼容历史 null 数据） */
@@ -30,41 +29,7 @@ async function syncBalanceSnapshot(accountId: number, newBalance: number): Promi
     .eq('account_id', accountId);
 }
 
-function formatUtcTradeDate(executedAt: number) {
-  const isoString = new Date(executedAt).toISOString();
-
-  return {
-    date: isoString.slice(0, 10),
-    openTime: isoString.slice(11, 16),
-    executedAt: isoString,
-  };
-}
-
-function formatBinanceStrategy(row: {
-  side: string;
-  contractType: string;
-  liquidity: string;
-}) {
-  const parts = ['币安期权'];
-
-  if (row.side === 'BUY') parts.push('买入');
-  if (row.side === 'SELL') parts.push('卖出');
-  if (row.contractType === 'CALL') parts.push('Call');
-  if (row.contractType === 'PUT') parts.push('Put');
-  if (row.liquidity === 'MAKER') parts.push('Maker');
-  if (row.liquidity === 'TAKER') parts.push('Taker');
-
-  return parts.join('/');
-}
-
-function toSortTime(row: { date?: string; openTime?: string; createdAt?: string; executedAt?: string }) {
-  if (row.executedAt) {
-    const timestamp = Date.parse(row.executedAt);
-    if (Number.isFinite(timestamp)) {
-      return timestamp;
-    }
-  }
-
+function toSortTime(row: { date?: string; openTime?: string; createdAt?: string }) {
   if (row.date) {
     const candidate = `${row.date}T${row.openTime || '00:00'}:00.000Z`;
     const timestamp = Date.parse(candidate);
@@ -81,10 +46,6 @@ function toSortTime(row: { date?: string; openTime?: string; createdAt?: string;
   }
 
   return 0;
-}
-
-function isExternalTradeId(id: string) {
-  return id.startsWith('binance-options-');
 }
 
 export async function GET(request: Request) {
@@ -110,7 +71,7 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    const manualTrades = (data ?? []).map((row: any) => ({
+    const trades = (data ?? []).map((row: any) => ({
       id: row.id,
       symbol: row.symbol || '',
       strategy: row.strategy || '',
@@ -130,52 +91,7 @@ export async function GET(request: Request) {
       updatedAt: row.updated_at,
     }));
 
-    const selectedAccountId = accountId ? Number(accountId) : undefined;
-    const configuredBinanceAccountId = Number(process.env.BINANCE_OPTIONS_ACCOUNT_ID || 1);
-    const shouldIncludeBinance = !selectedAccountId || selectedAccountId === configuredBinanceAccountId;
-
-    const binanceResult = await fetchBinanceOptionsTrades({
-      startDate,
-      endDate,
-    });
-
-    const binanceTrades = shouldIncludeBinance ? binanceResult.trades.map((trade) => {
-      const { date, openTime, executedAt } = formatUtcTradeDate(trade.executedAt);
-
-      return {
-        id: `binance-options-${trade.id}`,
-        symbol: trade.symbol,
-        strategy: formatBinanceStrategy(trade),
-        position: 0,
-        openAmount: trade.quoteAmount,
-        openTime,
-        closeReason: 'pending',
-        remark: trade.orderId ? `订单号 ${trade.orderId}` : '币安期权成交',
-        profitLoss: trade.realizedProfit ?? 0,
-        date,
-        isClosed: false,
-        accountId: configuredBinanceAccountId,
-        source: 'binance-options',
-        exchange: 'Binance',
-        isReadOnly: true,
-        externalId: trade.id,
-        orderId: trade.orderId,
-        side: trade.side,
-        quantity: trade.quantity,
-        price: trade.price,
-        fee: trade.fee,
-        executedAt,
-      };
-    }) : [];
-
-    const trades = [...manualTrades, ...binanceTrades].sort((left, right) => toSortTime(right) - toSortTime(left));
-
-    return NextResponse.json({
-      trades,
-      sources: {
-        binanceOptions: binanceResult.status,
-      },
-    });
+    return NextResponse.json({ trades });
   } catch (error) {
     console.error('Error fetching trades:', error);
     return NextResponse.json({ error: 'Failed to fetch trades' }, { status: 500 });
@@ -299,11 +215,11 @@ export async function PUT(request: Request) {
     const { id, profitLoss: newProfitLoss, accountId, ...data } = body;
     const targetAccountId = accountId || 1;
 
-    if (!id || isExternalTradeId(String(id))) {
-      return NextResponse.json({ error: 'External trades are read-only' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
     }
 
-    // 获取旧交易记录（旧记录 account_id 可能为 null，不加 account_id 过滤）
+    // 获取旧交易记录
     const { data: oldTrade, error: oldTradeError } = await supabase
       .from('trades')
       .select('*')
@@ -336,7 +252,7 @@ export async function PUT(request: Request) {
     updateData.updated_at = new Date();
 
     // 更新交易记录
-    if (Object.keys(updateData).length > 1) { // 至少有一个字段要更新
+    if (Object.keys(updateData).length > 1) {
       const { error: updateError } = await supabase
         .from('trades')
         .update(updateData)
@@ -345,7 +261,7 @@ export async function PUT(request: Request) {
       if (updateError) throw updateError;
     }
 
-    // 更新后实时重算真实余额（避免依赖 balance 快照脏数据）
+    // 更新后实时重算真实余额
     const numericAccountId = Number(targetAccountId) || 1;
     const newBalance = await calcRealBalance();
     await syncBalanceSnapshot(numericAccountId, newBalance);
@@ -379,11 +295,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
     }
 
-    if (isExternalTradeId(id)) {
-      return NextResponse.json({ error: 'External trades are read-only' }, { status: 400 });
-    }
-
-    // 获取要删除的交易记录（旧记录 account_id 可能为 null，不加 account_id 过滤）
+    // 获取要删除的交易记录
     const { data: trade, error: tradeError } = await supabase
       .from('trades')
       .select('*')
@@ -397,8 +309,6 @@ export async function DELETE(request: Request) {
       throw tradeError;
     }
 
-    const profitLoss = Number(trade.profit_loss);
-
     // 删除交易记录
     const { error: deleteError } = await supabase
       .from('trades')
@@ -407,7 +317,7 @@ export async function DELETE(request: Request) {
 
     if (deleteError) throw deleteError;
 
-    // 删除后实时重算真实余额（避免依赖 balance 快照脏数据）
+    // 删除后实时重算真实余额
     const newBalance = await calcRealBalance();
     await syncBalanceSnapshot(Number(targetAccountId) || 1, newBalance);
 
