@@ -1,106 +1,93 @@
 import { NextResponse } from 'next/server';
-import supabase from '@/lib/supabase';
+import { getSupabase, toPublicError } from '@/lib/supabase';
+import { recalcAndPersistBalance } from '@/lib/balance';
+import {
+  DEFAULT_ACCOUNT_ID,
+  createFundRecordSchema,
+  parseFundRecord,
+  parseAccountIdParam,
+} from '@/lib/schema';
 
-/**
- * 从 fund_records + trades 实时计算真实余额。
- * 不加 account_id 过滤（兼容历史 null 数据，且目前只有单账户）。
- */
-async function calcRealBalance(): Promise<number> {
-  const [fundsRes, tradesRes] = await Promise.all([
-    supabase.from('fund_records').select('type, amount'),
-    supabase.from('trades').select('profit_loss'),
-  ]);
+const MAX_LIMIT = 1000;
 
-  if (fundsRes.error) throw fundsRes.error;
-  if (tradesRes.error) throw tradesRes.error;
-
-  let balance = 0;
-  for (const r of fundsRes.data ?? []) {
-    const amt = Number(r.amount) || 0;
-    balance += r.type === 'deposit' ? amt : -amt;
-  }
-  for (const t of tradesRes.data ?? []) {
-    balance += Number(t.profit_loss) || 0;
-  }
-  return balance;
+function accountScope(accountId: number): string {
+  return accountId === DEFAULT_ACCOUNT_ID
+    ? `account_id.eq.${accountId},account_id.is.null`
+    : `account_id.eq.${accountId}`;
 }
 
-/** 同步 balance 快照（直接 update account_id=1 的行，不做额外查询） */
-async function syncBalanceSnapshot(accountId: number, newBalance: number): Promise<void> {
-  await supabase
-    .from('balance')
-    .update({ amount: String(newBalance) })
-    .eq('account_id', accountId);
+function fail(message: string, status = 500, error?: unknown) {
+  if (error) console.error(message, error);
+  return NextResponse.json({ error: message }, { status });
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type') as 'deposit' | 'withdraw' | null;
-    const accountId = searchParams.get('accountId');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const type = searchParams.get('type');
+    const accountId = parseAccountIdParam(searchParams.get('accountId'));
+    if (accountId === null) return fail('accountId 不合法', 400);
+    const rawLimit = Number(searchParams.get('limit')) || 200;
+    const limit = Math.max(1, Math.min(rawLimit, MAX_LIMIT));
 
-    let query = supabase
+    let query = getSupabase()
       .from('fund_records')
       .select('*')
+      .or(accountScope(accountId))
+      .order('date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (accountId) query = query.eq('account_id', accountId);
-    if (type) query = query.eq('type', type);
+    if (type === 'deposit' || type === 'withdraw') query = query.eq('type', type);
 
     const { data, error } = await query;
     if (error) throw error;
 
-    const records = data.map((row: any) => ({
-      id: row.id,
-      type: row.type,
-      amount: Number(row.amount),
-      date: row.date,
-      accountId: row.account_id,
-      createdAt: row.created_at,
-    }));
-
-    return NextResponse.json({ records });
+    return NextResponse.json({
+      records: (data ?? []).map((row: Record<string, unknown>) => parseFundRecord(row)),
+    });
   } catch (error) {
-    console.error('Error fetching fund records:', error);
-    return NextResponse.json({ error: 'Failed to fetch fund records' }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to fetch fund records'), 500, error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { type, amount, date, accountId } = body;
-    const targetAccountId = Number(accountId) || 1;
+    const parsed = createFundRecordSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? '请求参数不合法', 400);
+    }
+    const input = parsed.data;
+    const sb = getSupabase();
 
-    // 创建记录
-    const { data: record, error: recordError } = await supabase
+    const { data: record, error } = await sb
       .from('fund_records')
-      .insert({ type, amount: String(amount), date, account_id: targetAccountId })
+      .insert({
+        type: input.type,
+        amount: String(input.amount),
+        date: input.date,
+        account_id: input.accountId,
+      })
       .select()
       .single();
 
-    if (recordError) throw recordError;
+    if (error) throw error;
 
-    // 插入后实时重算余额
-    const newBalance = await calcRealBalance();
-    await syncBalanceSnapshot(targetAccountId, newBalance);
+    const newBalance = await recalcAndPersistBalance(input.accountId);
+
+    if (newBalance < 0) {
+      // 出金超出余额：回滚
+      await sb.from('fund_records').delete().eq('id', record.id);
+      await recalcAndPersistBalance(input.accountId);
+      return fail('余额不足，无法完成出金', 400);
+    }
 
     return NextResponse.json({
-      record: {
-        id: record.id,
-        type: record.type,
-        amount: Number(record.amount),
-        date: record.date,
-        accountId: record.account_id,
-        createdAt: record.created_at,
-      },
+      record: parseFundRecord(record as Record<string, unknown>),
       balance: newBalance,
     });
   } catch (error) {
-    console.error('Error creating fund record:', error);
-    return NextResponse.json({ error: 'Failed to create fund record' }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to create fund record'), 500, error);
   }
 }
 
@@ -108,33 +95,27 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const accountId = searchParams.get('accountId');
-    const targetAccountId = Number(accountId) || 1;
+    const accountIdParam = searchParams.get('accountId');
+    if (!id) return fail('Fund record ID is required', 400);
 
-    console.log('[fund-records DELETE] id:', id, 'targetAccountId:', targetAccountId);
-
-    if (!id) {
-      return NextResponse.json({ error: 'Fund record ID is required' }, { status: 400 });
-    }
-
-    // 删除记录（不加 account_id 过滤，兼容历史 null 数据）
-    const { error: deleteError } = await supabase
+    const sb = getSupabase();
+    const { data: record, error: findError } = await sb
       .from('fund_records')
-      .delete()
-      .eq('id', id);
+      .select('id, account_id')
+      .eq('id', id)
+      .maybeSingle();
 
-    console.log('[fund-records DELETE] deleteError:', deleteError);
+    if (findError) throw findError;
+    if (!record) return fail('Fund record not found', 404);
+
+    const accountId = Number(record.account_id ?? accountIdParam) || DEFAULT_ACCOUNT_ID;
+
+    const { error: deleteError } = await sb.from('fund_records').delete().eq('id', id);
     if (deleteError) throw deleteError;
 
-    // 删除后重算真实余额
-    const newBalance = await calcRealBalance();
-    console.log('[fund-records DELETE] newBalance:', newBalance);
-
-    await syncBalanceSnapshot(targetAccountId, newBalance);
-
+    const newBalance = await recalcAndPersistBalance(accountId);
     return NextResponse.json({ success: true, balance: newBalance });
   } catch (error) {
-    console.error('[fund-records DELETE] ERROR:', error);
-    return NextResponse.json({ error: 'Failed to delete fund record', detail: String(error) }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to delete fund record'), 500, error);
   }
 }

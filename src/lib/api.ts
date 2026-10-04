@@ -1,186 +1,115 @@
-// API 客户端，用于简化与后端的通信
+import { z } from 'zod';
+import {
+  accountSchema,
+  tradeSchema,
+  fundRecordSchema,
+  type Account,
+  type Trade,
+  type FundRecord,
+  type CreateTradeInput,
+  type UpdateTradeInput,
+  type CreateFundRecordInput,
+} from './schema';
 
 const API_BASE = '/api';
 
+/** 统一请求封装：解析 JSON、提取错误信息、校验响应结构 */
+async function request<T>(
+  path: string,
+  init: RequestInit | undefined,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...init?.headers },
+    });
+  } catch {
+    throw new Error('网络连接失败，请检查网络后重试');
+  }
+
+  const text = await res.text();
+  let payload: unknown = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error(`服务端返回异常 (${res.status})`);
+    }
+  }
+
+  if (!res.ok) {
+    const msg =
+      payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : `请求失败 (${res.status})`;
+    throw new Error(msg);
+  }
+
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error('服务端返回的数据格式异常');
+  }
+  return parsed.data;
+}
+
+const qs = (params: Record<string, string | number | undefined>) => {
+  const search = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '') search.append(k, String(v));
+  }
+  const s = search.toString();
+  return s ? `?${s}` : '';
+};
+
+// ── 响应结构 ────────────────────────────────────────────────────────────────
+
+const accountsRes = z.object({ accounts: z.array(accountSchema) });
+const balanceRes = z.object({ balance: z.number() });
+const tradesRes = z.object({ trades: z.array(tradeSchema) });
+const tradeWriteRes = z.object({ trade: tradeSchema, balance: z.number() });
+const fundRecordsRes = z.object({ records: z.array(fundRecordSchema) });
+const fundWriteRes = z.object({ record: fundRecordSchema, balance: z.number() });
+const deleteRes = z.object({ success: z.boolean(), balance: z.number() });
+
+// ── API ─────────────────────────────────────────────────────────────────────
+
 export const api = {
-  // Account APIs
   accounts: {
-    getAll: async () => {
-      const res = await fetch(`${API_BASE}/accounts`);
-      if (!res.ok) throw new Error('Failed to fetch accounts');
-      return res.json();
-    },
-    create: async (name: string) => {
-      const res = await fetch(`${API_BASE}/accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to create account');
-      }
-      return res.json();
-    },
-    update: async (id: number, name: string) => {
-      const res = await fetch(`${API_BASE}/accounts`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, name }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to update account');
-      }
-      return res.json();
-    },
-    delete: async (id: number) => {
-      const res = await fetch(`${API_BASE}/accounts?id=${id}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete account');
-      }
-      return res.json();
-    },
+    getAll: () => request('/accounts', undefined, accountsRes),
+    create: (name: string) =>
+      request('/accounts', { method: 'POST', body: JSON.stringify({ name }) }, z.object({ account: accountSchema })),
+    update: (id: number, name: string) =>
+      request('/accounts', { method: 'PUT', body: JSON.stringify({ id, name }) }, z.object({ account: accountSchema })),
+    delete: (id: number) =>
+      request(`/accounts${qs({ id })}`, { method: 'DELETE' }, z.object({ success: z.boolean() })),
   },
 
-  // Balance APIs
   balance: {
-    get: async (accountId?: number) => {
-      const query = accountId ? `?accountId=${accountId}` : '';
-      const res = await fetch(`${API_BASE}/balance${query}`);
-      if (!res.ok) throw new Error('Failed to fetch balance');
-      return res.json();
-    },
-    update: async (amount: number, accountId?: number) => {
-      const res = await fetch(`${API_BASE}/balance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, accountId }),
-      });
-      if (!res.ok) throw new Error('Failed to update balance');
-      return res.json();
-    },
+    get: (accountId?: number) => request(`/balance${qs({ accountId })}`, undefined, balanceRes),
   },
 
-  // Trades APIs
   trades: {
-    getAll: async (params?: { startDate?: string; endDate?: string; accountId?: number }) => {
-      const query = new URLSearchParams();
-      if (params?.startDate) query.append('startDate', params.startDate);
-      if (params?.endDate) query.append('endDate', params.endDate);
-      if (params?.accountId) query.append('accountId', String(params.accountId));
-      
-      const res = await fetch(`${API_BASE}/trades?${query}`);
-      if (!res.ok) throw new Error('Failed to fetch trades');
-      return res.json();
-    },
-    create: async (data: any) => {
-      const res = await fetch(`${API_BASE}/trades`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to create trade');
-      }
-      return res.json();
-    },
-    update: async (id: string, data: any) => {
-      const res = await fetch(`${API_BASE}/trades`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...data }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to update trade');
-      }
-      return res.json();
-    },
-    delete: async (id: string, accountId?: number) => {
-      const query = accountId ? `?id=${id}&accountId=${accountId}` : `?id=${id}`;
-      const res = await fetch(`${API_BASE}/trades${query}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete trade');
-      }
-      return res.json();
-    },
+    getAll: (params?: { startDate?: string; endDate?: string; accountId?: number }) =>
+      request(`/trades${qs(params ?? {})}`, undefined, tradesRes),
+    create: (data: CreateTradeInput) =>
+      request('/trades', { method: 'POST', body: JSON.stringify(data) }, tradeWriteRes),
+    update: (id: string, data: Omit<UpdateTradeInput, 'id'>) =>
+      request('/trades', { method: 'PUT', body: JSON.stringify({ id, ...data }) }, tradeWriteRes),
+    delete: (id: string, accountId?: number) =>
+      request(`/trades${qs({ id, accountId })}`, { method: 'DELETE' }, deleteRes),
   },
 
-  // Fund Records APIs
   fundRecords: {
-    getAll: async (limit?: number, accountId?: number) => {
-      const params = new URLSearchParams();
-      if (limit) params.append('limit', String(limit));
-      if (accountId) params.append('accountId', String(accountId));
-      const res = await fetch(`${API_BASE}/fund-records?${params}`);
-      if (!res.ok) throw new Error('Failed to fetch fund records');
-      return res.json();
-    },
-    getByType: async (type: 'deposit' | 'withdraw', accountId?: number) => {
-      const params = new URLSearchParams();
-      params.append('type', type);
-      if (accountId) params.append('accountId', String(accountId));
-      const res = await fetch(`${API_BASE}/fund-records?${params}`);
-      if (!res.ok) throw new Error('Failed to fetch fund records');
-      return res.json();
-    },
-    create: async (data: any) => {
-      const res = await fetch(`${API_BASE}/fund-records`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to create fund record');
-      }
-      return res.json();
-    },
-    delete: async (id: string, accountId?: number) => {
-      const query = accountId ? `?id=${id}&accountId=${accountId}` : `?id=${id}`;
-      const res = await fetch(`${API_BASE}/fund-records${query}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete fund record');
-      }
-      return res.json();
-    },
-  },
-
-  // Equity History APIs
-  equityHistory: {
-    getAll: async (accountId?: number) => {
-      const query = accountId ? `?accountId=${accountId}` : '';
-      const res = await fetch(`${API_BASE}/equity-history${query}`);
-      if (!res.ok) throw new Error('Failed to fetch equity history');
-      return res.json();
-    },
-    create: async (data: any) => {
-      const res = await fetch(`${API_BASE}/equity-history`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error('Failed to create equity history');
-      return res.json();
-    },
-    clear: async (accountId?: number) => {
-      const query = accountId ? `?accountId=${accountId}` : '';
-      const res = await fetch(`${API_BASE}/equity-history${query}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error('Failed to clear equity history');
-      return res.json();
-    },
+    getAll: (limit: number, accountId?: number) =>
+      request(`/fund-records${qs({ limit, accountId })}`, undefined, fundRecordsRes),
+    create: (data: CreateFundRecordInput) =>
+      request('/fund-records', { method: 'POST', body: JSON.stringify(data) }, fundWriteRes),
+    delete: (id: string, accountId?: number) =>
+      request(`/fund-records${qs({ id, accountId })}`, { method: 'DELETE' }, deleteRes),
   },
 };
+
+export type { Account, Trade, FundRecord };

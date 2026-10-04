@@ -1,51 +1,24 @@
 import { NextResponse } from 'next/server';
-import supabase from '@/lib/supabase';
+import { getSupabase, toPublicError } from '@/lib/supabase';
+import { recalcAndPersistBalance } from '@/lib/balance';
+import {
+  DEFAULT_ACCOUNT_ID,
+  createTradeSchema,
+  updateTradeSchema,
+  parseTrade,
+  parseAccountIdParam,
+} from '@/lib/schema';
 
-/** 从 fund_records + trades 实时计算真实余额（不加 account_id 过滤，兼容历史 null 数据） */
-async function calcRealBalance(): Promise<number> {
-  const [fundsRes, tradesRes] = await Promise.all([
-    supabase.from('fund_records').select('type, amount'),
-    supabase.from('trades').select('profit_loss'),
-  ]);
-  if (fundsRes.error) throw fundsRes.error;
-  if (tradesRes.error) throw tradesRes.error;
-
-  let balance = 0;
-  for (const r of fundsRes.data ?? []) {
-    const amt = Number(r.amount) || 0;
-    balance += r.type === 'deposit' ? amt : -amt;
-  }
-  for (const t of tradesRes.data ?? []) {
-    balance += Number(t.profit_loss) || 0;
-  }
-  return balance;
+/** 默认账户额外包含 account_id 为 null 的历史数据 */
+function accountScope(accountId: number): string {
+  return accountId === DEFAULT_ACCOUNT_ID
+    ? `account_id.eq.${accountId},account_id.is.null`
+    : `account_id.eq.${accountId}`;
 }
 
-/** 同步 balance 快照（直接 update account_id 对应的行） */
-async function syncBalanceSnapshot(accountId: number, newBalance: number): Promise<void> {
-  await supabase
-    .from('balance')
-    .update({ amount: String(newBalance) })
-    .eq('account_id', accountId);
-}
-
-function toSortTime(row: { date?: string; openTime?: string; createdAt?: string }) {
-  if (row.date) {
-    const candidate = `${row.date}T${row.openTime || '00:00'}:00.000Z`;
-    const timestamp = Date.parse(candidate);
-    if (Number.isFinite(timestamp)) {
-      return timestamp;
-    }
-  }
-
-  if (row.createdAt) {
-    const timestamp = Date.parse(row.createdAt);
-    if (Number.isFinite(timestamp)) {
-      return timestamp;
-    }
-  }
-
-  return 0;
+function fail(message: string, status = 500, error?: unknown) {
+  if (error) console.error(message, error);
+  return NextResponse.json({ error: message }, { status });
 }
 
 export async function GET(request: Request) {
@@ -53,234 +26,159 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const accountId = searchParams.get('accountId');
+    const accountId = parseAccountIdParam(searchParams.get('accountId'));
+    if (accountId === null) return fail('accountId 不合法', 400);
 
-    let query = supabase.from('trades').select('*')
+    let query = getSupabase()
+      .from('trades')
+      .select('*')
+      .or(accountScope(accountId))
       .order('date', { ascending: false })
       .order('created_at', { ascending: false });
 
-    if (accountId) {
-      query = query.eq('account_id', accountId);
-    }
-
-    if (startDate && endDate) {
-      query = query.gte('date', startDate).lte('date', endDate);
-    }
+    if (startDate) query = query.gte('date', startDate);
+    if (endDate) query = query.lte('date', endDate);
 
     const { data, error } = await query;
-
     if (error) throw error;
 
-    const trades = (data ?? []).map((row: any) => ({
-      id: row.id,
-      symbol: row.symbol || '',
-      strategy: row.strategy || '',
-      position: Number(row.position) || 0,
-      openAmount: row.open_amount != null ? (Number(row.open_amount) || 0) : 0,
-      openTime: row.open_time || '',
-      closeReason: row.close_reason || 'profit',
-      remark: row.remark || '',
-      profitLoss: row.profit_loss != null ? (Number(row.profit_loss) || 0) : 0,
-      date: row.date || '',
-      isClosed: row.is_closed ?? true,
-      accountId: row.account_id,
-      source: 'manual',
-      exchange: 'Manual',
-      isReadOnly: false,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
-
-    return NextResponse.json({ trades });
+    return NextResponse.json({
+      trades: (data ?? []).map((row: Record<string, unknown>) => parseTrade(row)),
+    });
   } catch (error) {
-    console.error('Error fetching trades:', error);
-    return NextResponse.json({ error: 'Failed to fetch trades' }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to fetch trades'), 500, error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { accountId } = body;
-    const targetAccountId = accountId || 1;
+    const parsed = createTradeSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? '请求参数不合法', 400);
+    }
+    const input = parsed.data;
+    const sb = getSupabase();
 
-    // 处理数据
-    const symbol = body.symbol || '';
-    const strategy = body.strategy || '';
-    const position = body.position ?? 0;
-    const openAmount = String(body.openAmount ?? 0);
-    const openTime = body.openTime || '';
-    const date = body.date || '';
-    const isClosed = body.isClosed ?? true;
-    const closeReason = body.closeReason;
-    const remark = body.remark;
-    const profitLoss = body.profitLoss !== undefined && body.profitLoss !== null ? String(body.profitLoss) : '0';
-
-    // 创建交易记录
-    const { data: trade, error: tradeError } = await supabase
+    const { data: trade, error } = await sb
       .from('trades')
       .insert({
-        symbol,
-        strategy,
-        position,
-        open_amount: openAmount,
-        open_time: openTime,
-        close_reason: closeReason,
-        remark: remark,
-        profit_loss: profitLoss,
-        date,
-        is_closed: isClosed,
-        account_id: targetAccountId
+        symbol: input.symbol,
+        strategy: input.strategy,
+        position: input.position,
+        open_amount: String(input.openAmount),
+        open_time: input.openTime,
+        close_reason: input.isClosed ? input.closeReason : 'pending',
+        remark: input.closeReason === 'other' ? (input.remark ?? null) : null,
+        profit_loss: String(input.isClosed ? input.profitLoss : 0),
+        date: input.date,
+        is_closed: input.isClosed,
+        account_id: input.accountId,
       })
       .select()
       .single();
 
-    if (tradeError) throw tradeError;
+    if (error) throw error;
+    const insertedId = trade.id as string;
 
-    // 计算新余额
-    let newBalance = 0;
-    if (body.profitLoss !== undefined && body.profitLoss !== null && body.profitLoss !== '') {
-      const profitLossNum = Number(body.profitLoss);
-      
-      // 获取当前账户余额
-      const { data: balanceData, error: balanceError } = await supabase
-        .from('balance')
-        .select('amount')
-        .eq('account_id', targetAccountId)
-        .single();
+    const newBalance = await recalcAndPersistBalance(input.accountId);
 
-      if (balanceError && balanceError.code !== 'PGRST116') {
-        throw balanceError;
-      }
-      
-      const currentBalance = balanceData ? Number(balanceData.amount) : 0;
-      
-      newBalance = currentBalance + profitLossNum;
-
-      if (newBalance < 0) {
-        return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
-      }
-
-      // 更新余额
-      if (balanceData) {
-        const { error: updateError } = await supabase
-          .from('balance')
-          .update({ amount: String(newBalance) })
-          .eq('account_id', targetAccountId);
-
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('balance')
-          .insert({ amount: String(newBalance), account_id: targetAccountId });
-
-        if (insertError) throw insertError;
-      }
+    // 余额不能为负：不合法则回滚刚插入的交易
+    if (newBalance < 0) {
+      await sb.from('trades').delete().eq('id', insertedId);
+      await recalcAndPersistBalance(input.accountId);
+      return fail('余额不足，无法添加这笔亏损交易', 400);
     }
 
     return NextResponse.json({
-      trade: {
-        id: trade.id,
-        symbol: trade.symbol,
-        strategy: trade.strategy,
-        position: Number(trade.position),
-        openAmount: Number(trade.open_amount),
-        openTime: trade.open_time,
-        closeReason: trade.close_reason,
-        remark: trade.remark,
-        profitLoss: Number(trade.profit_loss),
-        date: trade.date,
-        isClosed: trade.is_closed,
-        accountId: trade.account_id,
-        source: 'manual',
-        exchange: 'Manual',
-        isReadOnly: false,
-        createdAt: trade.created_at,
-        updatedAt: trade.updated_at,
-      },
+      trade: parseTrade(trade as Record<string, unknown>),
       balance: newBalance,
     });
-  } catch (error: any) {
-    console.error('Error creating trade:', error);
-    return NextResponse.json({
-      error: 'Failed to create trade',
-      details: error?.message || 'Unknown error',
-    }, { status: 500 });
+  } catch (error) {
+    return fail(toPublicError(error, 'Failed to create trade'), 500, error);
   }
 }
 
 export async function PUT(request: Request) {
   try {
-    const body = await request.json();
-    const { id, profitLoss: newProfitLoss, accountId, ...data } = body;
-    const targetAccountId = accountId || 1;
-
-    if (!id) {
-      return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
+    const parsed = updateTradeSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? '请求参数不合法', 400);
     }
+    const { id, accountId: clientAccountId, ...rest } = parsed.data;
 
-    // 获取旧交易记录
-    const { data: oldTrade, error: oldTradeError } = await supabase
+    const sb = getSupabase();
+    const { data: oldTrade, error: findError } = await sb
       .from('trades')
       .select('*')
       .eq('id', id)
+      .maybeSingle();
+
+    if (findError) throw findError;
+    if (!oldTrade) return fail('Trade not found', 404);
+
+    // 余额重算必须以该行实际归属的账户为准，不信任客户端传的 accountId
+    const accountId = oldTrade.account_id != null ? Number(oldTrade.account_id) : clientAccountId;
+
+    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (rest.symbol !== undefined) updateData.symbol = rest.symbol;
+    if (rest.strategy !== undefined) updateData.strategy = rest.strategy;
+    if (rest.position !== undefined) updateData.position = rest.position;
+    if (rest.openAmount !== undefined) updateData.open_amount = String(rest.openAmount);
+    if (rest.openTime !== undefined) updateData.open_time = rest.openTime;
+    if (rest.date !== undefined) updateData.date = rest.date;
+    if (rest.isClosed !== undefined) updateData.is_closed = rest.isClosed;
+    const closed = rest.isClosed ?? Boolean(oldTrade.is_closed);
+    if (rest.isClosed !== undefined || rest.closeReason !== undefined) {
+      updateData.close_reason = closed ? (rest.closeReason ?? oldTrade.close_reason) : 'pending';
+    }
+    if (rest.remark !== undefined) updateData.remark = rest.remark ?? null;
+    if (rest.profitLoss !== undefined) {
+      updateData.profit_loss = String(closed ? rest.profitLoss : 0);
+    }
+    // 取消平仓（已平仓 → 持有中）时，必须清掉旧盈亏与备注，否则「持有中」的单子仍参与余额结算
+    if (rest.isClosed === false) {
+      updateData.profit_loss = '0';
+      updateData.remark = null;
+    }
+
+    const { data: updated, error: updateError } = await sb
+      .from('trades')
+      .update(updateData)
+      .eq('id', id)
+      .select()
       .single();
 
-    if (oldTradeError) {
-      if (oldTradeError.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Trade not found' }, { status: 404 });
-      }
-      throw oldTradeError;
-    }
+    if (updateError) throw updateError;
 
-    const actualNewProfitLoss = newProfitLoss !== undefined && newProfitLoss !== null && newProfitLoss !== ''
-      ? newProfitLoss
-      : Number(oldTrade.profit_loss);
+    const newBalance = await recalcAndPersistBalance(accountId);
 
-    // 构建更新数据
-    const updateData: any = {};
-    if (data.symbol !== undefined) updateData.symbol = data.symbol;
-    if (data.strategy !== undefined) updateData.strategy = data.strategy;
-    if (data.position !== undefined) updateData.position = data.position;
-    if (data.openAmount !== undefined) updateData.open_amount = String(data.openAmount);
-    if (data.openTime !== undefined) updateData.open_time = data.openTime;
-    if (data.closeReason !== undefined) updateData.close_reason = data.closeReason;
-    if (data.remark !== undefined) updateData.remark = data.remark;
-    if (newProfitLoss !== undefined) updateData.profit_loss = String(newProfitLoss);
-    if (data.date !== undefined) updateData.date = data.date;
-    if (data.isClosed !== undefined) updateData.is_closed = data.isClosed;
-    updateData.updated_at = new Date();
-
-    // 更新交易记录
-    if (Object.keys(updateData).length > 1) {
-      const { error: updateError } = await supabase
+    if (newBalance < 0) {
+      // 回滚本次修改
+      await sb
         .from('trades')
-        .update(updateData)
+        .update({
+          symbol: oldTrade.symbol,
+          strategy: oldTrade.strategy,
+          position: oldTrade.position,
+          open_amount: oldTrade.open_amount,
+          open_time: oldTrade.open_time,
+          close_reason: oldTrade.close_reason,
+          remark: oldTrade.remark,
+          profit_loss: oldTrade.profit_loss,
+          date: oldTrade.date,
+          is_closed: oldTrade.is_closed,
+        })
         .eq('id', id);
-
-      if (updateError) throw updateError;
+      await recalcAndPersistBalance(accountId);
+      return fail('修改后的盈亏会导致余额为负数，无法保存', 400);
     }
-
-    // 更新后实时重算真实余额
-    const numericAccountId = Number(targetAccountId) || 1;
-    const newBalance = await calcRealBalance();
-    await syncBalanceSnapshot(numericAccountId, newBalance);
 
     return NextResponse.json({
-      trade: {
-        id,
-        ...data,
-        profitLoss: actualNewProfitLoss,
-        accountId: targetAccountId,
-        source: 'manual',
-        exchange: 'Manual',
-        isReadOnly: false,
-      },
-      balance: newBalance
+      trade: parseTrade(updated as Record<string, unknown>),
+      balance: newBalance,
     });
-  } catch (error: any) {
-    console.error('Error updating trade:', error);
-    return NextResponse.json({ error: 'Failed to update trade' }, { status: 500 });
+  } catch (error) {
+    return fail(toPublicError(error, 'Failed to update trade'), 500, error);
   }
 }
 
@@ -288,42 +186,28 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const accountId = searchParams.get('accountId');
-    const targetAccountId = accountId || 1;
+    const accountIdParam = searchParams.get('accountId');
 
-    if (!id) {
-      return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
-    }
+    if (!id) return fail('Trade ID is required', 400);
 
-    // 获取要删除的交易记录
-    const { data: trade, error: tradeError } = await supabase
+    const sb = getSupabase();
+    const { data: trade, error: findError } = await sb
       .from('trades')
-      .select('*')
+      .select('id, account_id')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (tradeError) {
-      if (tradeError.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Trade not found' }, { status: 404 });
-      }
-      throw tradeError;
-    }
+    if (findError) throw findError;
+    if (!trade) return fail('Trade not found', 404);
 
-    // 删除交易记录
-    const { error: deleteError } = await supabase
-      .from('trades')
-      .delete()
-      .eq('id', id);
+    const accountId = Number(trade.account_id ?? accountIdParam) || DEFAULT_ACCOUNT_ID;
 
+    const { error: deleteError } = await sb.from('trades').delete().eq('id', id);
     if (deleteError) throw deleteError;
 
-    // 删除后实时重算真实余额
-    const newBalance = await calcRealBalance();
-    await syncBalanceSnapshot(Number(targetAccountId) || 1, newBalance);
-
+    const newBalance = await recalcAndPersistBalance(accountId);
     return NextResponse.json({ success: true, balance: newBalance });
   } catch (error) {
-    console.error('Error deleting trade:', error);
-    return NextResponse.json({ error: 'Failed to delete trade' }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to delete trade'), 500, error);
   }
 }

@@ -1,0 +1,13 @@
+﻿  1876  C:\Users\king\Documents\GitHub\zzz\app\page.tsx
+   282  C:\Users\king\Documents\GitHub\zzz\app\api\trades\route.ts
+   180  C:\Users\king\Documents\GitHub\zzz\src\lib\api.ts
+   127  C:\Users\king\Documents\GitHub\zzz\src\hooks\useTradingData.ts
+   118  C:\Users\king\Documents\GitHub\zzz\app\api\accounts\route.ts
+   117  C:\Users\king\Documents\GitHub\zzz\app\api\fund-records\route.ts
+    90  C:\Users\king\Documents\GitHub\zzz\app\api\equity-history\route.ts
+    69  C:\Users\king\Documents\GitHub\zzz\src\lib\utils.ts
+    64  C:\Users\king\Documents\GitHub\zzz\app\layout.tsx
+    63  C:\Users\king\Documents\GitHub\zzz\app\api\balance\route.ts
+    50  C:\Users\king\Documents\GitHub\zzz\app\api\generate-icon\route.ts
+    15  C:\Users\king\Documents\GitHub\zzz\src\hooks\use-mobile.ts
+     5  C:\Users\king\Documents\GitHub\zzz\src\lib\supabase.js

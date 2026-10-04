@@ -1,144 +1,113 @@
 import { NextResponse } from 'next/server';
-import supabase from '@/lib/supabase';
+import { getSupabase, toPublicError } from '@/lib/supabase';
+import { DEFAULT_ACCOUNT_ID, createAccountSchema, updateAccountSchema } from '@/lib/schema';
 
-// 获取所有账户
+function fail(message: string, status = 500, error?: unknown) {
+  if (error) console.error(message, error);
+  return NextResponse.json({ error: message }, { status });
+}
+
 export async function GET() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('accounts')
       .select('*')
       .order('created_at', { ascending: true });
 
     if (error) throw error;
-    return NextResponse.json({ accounts: data });
+    return NextResponse.json({ accounts: data ?? [] });
   } catch (error) {
-    console.error('Error fetching accounts:', error);
-    return NextResponse.json({ error: 'Failed to fetch accounts' }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to fetch accounts'), 500, error);
   }
 }
 
-// 创建新账户
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { name } = body;
-
-    if (!name || !name.trim()) {
-      return NextResponse.json({ error: 'Account name is required' }, { status: 400 });
+    const parsed = createAccountSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? '请求参数不合法', 400);
     }
 
-    const { data: account, error: accountError } = await supabase
+    const sb = getSupabase();
+    const { data: account, error } = await sb
       .from('accounts')
-      .insert({ name: name.trim() })
+      .insert({ name: parsed.data.name })
       .select()
       .single();
 
-    if (accountError) throw accountError;
+    if (error) {
+      if (error.code === '23505') return fail('账户名称已存在', 400);
+      throw error;
+    }
 
-    // 为新账户创建初始余额记录
-    const { error: balanceError } = await supabase
+    // 为新账户建立初始余额快照。
+    // 非致命：快照缺失时 readBalance 会实时重算，下次写操作也会自动补行。
+    const { error: balanceError } = await sb
       .from('balance')
       .insert({ amount: '0', account_id: account.id });
 
-    if (balanceError) throw balanceError;
+    if (balanceError) console.error('初始余额快照创建失败（可自动恢复）:', balanceError);
 
     return NextResponse.json({ account });
-  } catch (error: any) {
-    console.error('Error creating account:', error);
-    if (error.code === '23505') {
-      return NextResponse.json({ error: 'Account name already exists' }, { status: 400 });
-    }
-    return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
+  } catch (error) {
+    return fail(toPublicError(error, 'Failed to create account'), 500, error);
   }
 }
 
-// 更新账户名称
 export async function PUT(request: Request) {
   try {
-    const body = await request.json();
-    const { id, name } = body;
-
-    if (!id || !name || !name.trim()) {
-      return NextResponse.json({ error: 'Account ID and name are required' }, { status: 400 });
+    const parsed = updateAccountSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? '请求参数不合法', 400);
     }
 
-    const { data: account, error } = await supabase
+    const { data: account, error } = await getSupabase()
       .from('accounts')
-      .update({ name: name.trim(), updated_at: new Date() })
+      .update({ name: parsed.data.name, updated_at: new Date().toISOString() })
+      .eq('id', parsed.data.id)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') return fail('账户名称已存在', 400);
+      throw error;
+    }
+    if (!account) return fail('Account not found', 404);
+
+    return NextResponse.json({ account });
+  } catch (error) {
+    return fail(toPublicError(error, 'Failed to update account'), 500, error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = Number(searchParams.get('id'));
+
+    if (!Number.isInteger(id) || id <= 0) return fail('Account ID is required', 400);
+    if (id === DEFAULT_ACCOUNT_ID) return fail('不能删除默认账户', 400);
+
+    const sb = getSupabase();
+
+    // 先清理关联数据，最后删除账户本身；任一步失败都直接中止，避免出现孤儿记录
+    for (const table of ['balance', 'trades', 'fund_records', 'equity_history']) {
+      const { error } = await sb.from(table).delete().eq('account_id', id);
+      if (error) throw error;
+    }
+
+    const { data: account, error } = await sb
+      .from('accounts')
+      .delete()
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-    if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ account });
-  } catch (error: any) {
-    console.error('Error updating account:', error);
-    if (error.code === '23505') {
-      return NextResponse.json({ error: 'Account name already exists' }, { status: 400 });
-    }
-    return NextResponse.json({ error: 'Failed to update account' }, { status: 500 });
-  }
-}
-
-// 删除账户
-export async function DELETE(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
-    }
-
-    // 检查是否是默认账户（ID=1），不允许删除
-    if (id === '1') {
-      return NextResponse.json({ error: 'Cannot delete default account' }, { status: 400 });
-    }
-
-    // 删除账户相关的余额记录
-    const { error: balanceError } = await supabase
-      .from('balance')
-      .delete()
-      .eq('account_id', id);
-
-    if (balanceError) throw balanceError;
-
-    // 删除账户相关的交易记录
-    const { error: tradesError } = await supabase
-      .from('trades')
-      .delete()
-      .eq('account_id', id);
-
-    if (tradesError) throw tradesError;
-
-    // 删除账户相关的出入金记录
-    const { error: fundRecordsError } = await supabase
-      .from('fund_records')
-      .delete()
-      .eq('account_id', id);
-
-    if (fundRecordsError) throw fundRecordsError;
-
-    // 删除账户
-    const { data: account, error: accountError } = await supabase
-      .from('accounts')
-      .delete()
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (accountError) throw accountError;
-    if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
-    }
+    if (!account) return fail('Account not found', 404);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting account:', error);
-    return NextResponse.json({ error: 'Failed to delete account' }, { status: 500 });
+    return fail(toPublicError(error, 'Failed to delete account'), 500, error);
   }
 }

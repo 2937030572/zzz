@@ -1,0 +1,51 @@
+﻿鈻?Next.js 16.1.1 (webpack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+  Disabled SWC as replacement for Babel because of custom Babel configuration "babel.config.js" https://nextjs.org/docs/messages/swc-disabled
+  `compiler` options in `next.config.js` will be ignored while using Babel https://nextjs.org/docs/messages/ignored-compiler-options
+  Using external babel configuration from C:\Users\king\Documents\GitHub\zzz\babel.config.js
+  Disabled SWC as replacement for Babel because of custom Babel configuration "babel.config.js" https://nextjs.org/docs/messages/swc-disabled
+  `compiler` options in `next.config.js` will be ignored while using Babel https://nextjs.org/docs/messages/ignored-compiler-options
+  Disabled SWC as replacement for Babel because of custom Babel configuration "babel.config.js" https://nextjs.org/docs/messages/swc-disabled
+  `compiler` options in `next.config.js` will be ignored while using Babel https://nextjs.org/docs/messages/ignored-compiler-options
+  Using external babel configuration from C:\Users\king\Documents\GitHub\zzz\babel.config.js
+node.exe : [BABEL] Note: The code generator has deoptimised the styling of C:\Users\king\Documents\GitHub\zzz\node_modu
+les\next\dist\compiled\next-devtools\index.js as it exceeds the max of 500KB.
+所在位置 行:445 字符: 1
++ & "C:\Program Files\nodejs\node.exe" "node_modules\next\dist\bin\next ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([BABEL] Note: T...e max of 500KB.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+鉁?Compiled successfully in 28.1s
+  Running TypeScript ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/11) ...
+  Generating static pages using 15 workers (2/11) 
+鈿?metadataBase property in metadata export is not set for resolving social open graph or twitter images, using "http://
+localhost:3000". See https://nextjs.org/docs/app/api-reference/functions/generate-metadata#metadatabase
+  Generating static pages using 15 workers (5/11) 
+  Generating static pages using 15 workers (8/11) 
+鉁?Generating static pages using 15 workers (11/11) in 1475.9ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+鈹?鈼?/
+鈹?鈼?/_not-found
+鈹?茠 /api/accounts
+鈹?茠 /api/balance
+鈹?茠 /api/equity-history
+鈹?茠 /api/fund-records
+鈹?茠 /api/login
+鈹?茠 /api/trades
+鈹?鈼?/login
+
+
+茠 Proxy (Middleware)
+
+鈼? (Static)   prerendered as static content
+茠  (Dynamic)  server-rendered on demand
+
+EXIT=0

@@ -1,65 +1,40 @@
 import type { Metadata } from 'next';
-import { Inspector } from 'react-dev-inspector';
+import { DevInspector } from '@/components/DevInspector';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: '交易记录系统',
-    template: '%s | 交易记录系统',
+    default: '交易笔记',
+    template: '%s | 交易笔记',
   },
-  description:
-    '专业的交易记录管理系统，支持资产管理和交易记录的增删改查，实时追踪交易盈亏和资产变化。',
-  keywords: [
-    '交易记录',
-    '资产管理',
-    '交易管理',
-    '盈亏追踪',
-    '资产监控',
-    '交易系统',
-  ],
-  authors: [{ name: 'Trade System Team' }],
+  description: '记录交易、复盘盈亏、追踪资产变化的交易笔记',
+  keywords: ['交易笔记', '交易记录', '复盘', '盈亏', '资产管理'],
+  authors: [{ name: 'Trading Notes' }],
   generator: 'Next.js',
   icons: {
-    icon: [
-      { url: '/favicon.png', sizes: '512x512', type: 'image/png' },
-    ],
+    icon: [{ url: '/favicon.png', sizes: '512x512', type: 'image/png' }],
     shortcut: '/favicon.png',
-    apple: [
-      { url: '/favicon.png', sizes: '512x512', type: 'image/png' },
-    ],
+    apple: [{ url: '/favicon.png', sizes: '512x512', type: 'image/png' }],
   },
   openGraph: {
-    title: '交易记录系统 - 专业的交易管理工具',
-    description:
-    '专业的交易记录管理系统，支持资产管理和交易记录的增删改查，实时追踪交易盈亏和资产变化。',
+    title: '交易笔记',
+    description: '记录交易、复盘盈亏、追踪资产变化的交易笔记',
     type: 'website',
     locale: 'zh_CN',
-    images: [
-      {
-        url: '/favicon.png',
-        width: 512,
-        height: 512,
-        alt: '交易记录系统 - K线图标',
-      },
-    ],
+    images: [{ url: '/favicon.png', width: 512, height: 512, alt: '交易笔记' }],
   },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   const isDev = process.env.NODE_ENV === 'development';
 
   return (
-    <html lang="en">
-      <body className={`antialiased`}>
-        {isDev && <Inspector />}
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        {isDev && <DevInspector />}
         {children}
       </body>
     </html>
