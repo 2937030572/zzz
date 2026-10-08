@@ -59,6 +59,17 @@ export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
       }
     }
     const total = winTotal + lossTotal;
+
+    // 盈亏比 = 平均每笔盈利 / 平均每笔亏损（绝对值）。
+    // 无亏损笔数时为 Infinity（renderValue 会渲染为 '-'）；无盈亏数据时为 NaN，同样渲染 '-'。
+    const avgWin = winCount > 0 ? winTotal / winCount : 0;
+    const avgLoss = lossCount > 0 ? Math.abs(lossTotal) / lossCount : 0;
+    const profitRatio =
+      avgLoss > 0 ? avgWin / avgLoss : winCount > 0 ? Number.POSITIVE_INFINITY : Number.NaN;
+
+    // 盈利因子 = 总盈利 / 总亏损（备用口径，当前未展示）
+    const profitFactor = lossTotal < 0 ? winTotal / Math.abs(lossTotal) : Number.NaN;
+
     return {
       tradeCount,
       winTotal,
@@ -67,6 +78,8 @@ export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
       lossCount,
       total,
       winRate: tradeCount > 0 ? Math.round((winCount / tradeCount) * 100) : 0,
+      profitRatio,
+      profitFactor,
     };
   }, [filteredTrades]);
 

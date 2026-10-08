@@ -63,6 +63,8 @@ interface Props {
     lossCount: number;
     total: number;
     winRate: number;
+    /** 盈亏比 = 平均每笔盈利 / 平均每笔亏损；无亏损笔数时为 Infinity */
+    profitRatio: number;
   };
   tradeCount: number;
 }
@@ -209,11 +211,25 @@ export function StatsPanel({
             <Stat label="亏损金额" value={stats.lossTotal} tone="down" signed />
             <Stat label="亏损笔数" value={stats.lossCount} format="int" />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="净盈亏" value={stats.total} tone={toneOf(stats.total)} signed />
             <Stat label="交易笔数" value={tradeCount} format="int" />
             <Stat label="胜率" value={stats.winRate} format="percent" />
+            <Stat
+              label="盈亏比"
+              value={stats.profitRatio}
+              format="ratio"
+              // 无数据时（NaN/Infinity）显示 '-'，不应着色
+              tone={
+                Number.isFinite(stats.profitRatio)
+                  ? stats.profitRatio >= 1
+                    ? 'up'
+                    : 'down'
+                  : 'neutral'
+              }
+            />
           </div>
+          <p className="text-xs text-muted-foreground">盈亏比 = 平均每笔盈利 ÷ 平均每笔亏损</p>
         </div>
       </CardContent>
     </Card>

@@ -43,9 +43,19 @@ export async function calcAccountBalance(accountId: number): Promise<number> {
   return round2(balance);
 }
 
-/** 把重算结果写回 balance 快照表（不存在则插入） */
+/** 把重算结果写回 balance 快照表（不存在则插入）。
+ *  有唯一索引（迁移 001）时一次 upsert 完成；否则回退「查后写」两次往返。 */
 export async function syncBalanceSnapshot(accountId: number, balance: number): Promise<void> {
   const sb = getSupabase();
+  const amount = String(balance);
+
+  const { error: upsertError } = await sb
+    .from('balance')
+    .upsert({ account_id: accountId, amount }, { onConflict: 'account_id' });
+
+  if (!upsertError) return;
+  // 唯一索引缺失（迁移 001 未执行）时 upsert 会报 42P10，走兼容路径
+  if (upsertError.code !== '42P10') throw upsertError;
 
   const { data: existing, error: findError } = await sb
     .from('balance')
@@ -58,19 +68,33 @@ export async function syncBalanceSnapshot(accountId: number, balance: number): P
   if (existing) {
     const { error } = await sb
       .from('balance')
-      .update({ amount: String(balance) })
+      .update({ amount })
       .eq('account_id', accountId);
     if (error) throw error;
   } else {
     const { error } = await sb
       .from('balance')
-      .insert({ amount: String(balance), account_id: accountId });
+      .insert({ amount, account_id: accountId });
     if (error) throw error;
   }
 }
 
-/** 写操作后统一调用：重算 + 落库，返回权威余额 */
+/** 写操作后统一调用：重算 + 落库，返回权威余额。
+ *  优先走数据库 RPC（一次往返完成，见 assets/migrations/002_recalc_balance_rpc.sql）；
+ *  RPC 不存在（迁移未执行）时回退到 JS 多次查询路径，功能始终可用。 */
 export async function recalcAndPersistBalance(accountId: number): Promise<number> {
+  const sb = getSupabase();
+
+  const { data, error } = await sb.rpc('recalc_balance', { p_account_id: accountId });
+  if (!error) {
+    const n = Number(data);
+    if (Number.isFinite(n)) return round2(n);
+    // RPC 返回异常值时同样回退
+  } else if (error.code !== 'PGRST202' && !/could not find|not exist|schema cache/i.test(error.message ?? '')) {
+    // PGRST202 = 函数未注册（迁移未执行）；其他错误属于真故障，直接抛出
+    throw error;
+  }
+
   const balance = await calcAccountBalance(accountId);
   await syncBalanceSnapshot(accountId, balance);
   return balance;

@@ -63,8 +63,8 @@ export function Money({
   );
 }
 
-/** 数值模式：money 带货币符号，int 为整数计数，percent 为百分比 */
-export type ValueFormat = 'money' | 'int' | 'percent';
+/** 数值模式：money 带货币符号，int 为整数计数，percent 为百分比，ratio 为一位小数的比值 */
+export type ValueFormat = 'money' | 'int' | 'percent' | 'ratio';
 
 function renderValue(value: unknown, format: ValueFormat, signed: boolean): string {
   const n = Number(value);
@@ -74,6 +74,7 @@ function renderValue(value: unknown, format: ValueFormat, signed: boolean): stri
     const sign = signed && n > 0 ? '+' : '';
     return `${sign}${n.toFixed(n % 1 === 0 ? 0 : 2)}%`;
   }
+  if (format === 'ratio') return n.toFixed(1); // 盈亏比：保留一位小数
   return signed ? fmtSigned(value) : fmt(value);
 }
 
