@@ -1,0 +1,17 @@
+﻿node.exe : 
+所在位置 行:503 字符: 1
++ & "C:\Program Files\nodejs\node.exe" "node_modules\next\dist\bin\next ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+> Build error occurred
+Error: ENOENT: no such file or directory, mkdir 'C:\Users\king\Documents\GitHub\zzz\C:\Users\king\AppData\Local\Temp\zz
+z-build-verify'
+    at ignore-listed frames {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'mkdir',
+  path: 'C:\\Users\\king\\Documents\\GitHub\\zzz\\C:\\Users\\king\\AppData\\Local\\Temp\\zzz-build-verify'
+}
+EXIT=1

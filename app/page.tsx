@@ -98,8 +98,8 @@ export default function TradingApp() {
   const handleSubmitFund = async (type: FundType, amount: number, date: string) => {
     await run(async () => {
       try {
-        await api.fundRecords.create({ type, amount, date, accountId: currentAccountId });
-        await refresh();
+        const res = await api.fundRecords.create({ type, amount, date, accountId: currentAccountId });
+        data.applyFundSaved(res.record, res.balance);
         toast.success(type === 'deposit' ? '入金已记录' : '出金已记录');
       } catch (error) {
         toast.error(toMessage(error, '操作失败'));
@@ -110,8 +110,8 @@ export default function TradingApp() {
   const handleDeleteFundRecord = async (id: string) => {
     await run(async () => {
       try {
-        await api.fundRecords.delete(id, currentAccountId);
-        await refresh();
+        const res = await api.fundRecords.delete(id, currentAccountId);
+        data.applyFundDeleted(id, res.balance);
         toast.success('记录已删除');
       } catch (error) {
         toast.error(toMessage(error, '删除失败'));
@@ -145,16 +145,17 @@ export default function TradingApp() {
     await run(async () => {
       try {
         if (mode === 'edit' && editing) {
-          await api.trades.update(editing.id, form.buildPayload('edit', currentAccountId));
+          const res = await api.trades.update(editing.id, form.buildPayload('edit', currentAccountId));
+          data.applyTradeSaved(res.trade, res.balance);
           toast.success('交易已更新');
         } else {
-          await api.trades.create(form.buildPayload('create', currentAccountId));
+          const res = await api.trades.create(form.buildPayload('create', currentAccountId));
+          data.applyTradeSaved(res.trade, res.balance);
           toast.success('交易已记录');
         }
         form.reset();
         setEditing(null);
         setMode(null);
-        await refresh();
       } catch (error) {
         toast.error(toMessage(error, '保存失败'));
       }
@@ -164,8 +165,8 @@ export default function TradingApp() {
   const handleDeleteTrade = async (id: string) => {
     await run(async () => {
       try {
-        await api.trades.delete(id, currentAccountId);
-        await refresh();
+        const res = await api.trades.delete(id, currentAccountId);
+        data.applyTradeDeleted(id, res.balance);
         toast.success('交易已删除');
       } catch (error) {
         toast.error(toMessage(error, '删除失败'));
@@ -284,6 +285,8 @@ export default function TradingApp() {
             onQuickRange={handleQuickRange}
             stats={stats.filteredStats}
             tradeCount={stats.filteredTrades.length}
+            maxDrawdown={stats.maxDrawdown}
+            streaks={stats.streaks}
           />
 
           <TradeTable

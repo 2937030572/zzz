@@ -1,13 +1,18 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { fmt, fmtTick } from '@/lib/format';
 import type { ChartData } from '@/hooks/useTradeStats';
 import { CardHeading, Stat, toneOf } from './primitives';
+
+/** 展开时才加载：recharts 体积较大，而走势图默认折叠，不该进入首屏 bundle */
+const EquityLineChart = dynamic(() => import('./EquityLineChart'), {
+  ssr: false,
+  loading: () => <div className="h-64 w-full animate-pulse rounded-lg bg-muted/40" />,
+});
 
 interface Props {
   balance: number;
@@ -55,46 +60,8 @@ export function EquityChart({ balance, chartData }: Props) {
                   />
                 </div>
 
-                <div className="text-muted-foreground h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData.points} margin={{ top: 4, right: 8, bottom: 0, left: -8 }}>
-                      <CartesianGrid stroke="currentColor" strokeDasharray="3 3" opacity={0.15} />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fill: 'currentColor', fontSize: 12 }}
-                        tickLine={false}
-                        axisLine={{ stroke: 'currentColor', opacity: 0.2 }}
-                        minTickGap={24}
-                      />
-                      <YAxis
-                        tick={{ fill: 'currentColor', fontSize: 12 }}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={fmtTick}
-                        width={64}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'var(--popover)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '12px',
-                          color: 'var(--popover-foreground)',
-                          fontSize: 13,
-                        }}
-                        formatter={(value: unknown) => [fmt(value), '余额']}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="balance"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                        name="余额"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                {/* 仅在展开后渲染，recharts 此时才下载 */}
+                {open && <EquityLineChart points={chartData.points} />}
               </>
             )}
           </CardContent>

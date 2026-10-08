@@ -18,6 +18,21 @@ export interface ChartData {
   returnRate: string;
 }
 
+/** 最大回撤：percent 为负数（用于展示 -12.3%），amount 为正的回撤金额 */
+export interface MaxDrawdown {
+  percent: number;
+  amount: number;
+}
+
+export type StreakType = 'win' | 'loss' | 'none';
+
+export interface StreakStats {
+  /** 截至最新一笔的连续状态 */
+  current: { type: StreakType; length: number };
+  maxWin: number;
+  maxLoss: number;
+}
+
 /** 统计全部派生自 trades / fundRecords，全部单次遍历 */
 export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
   const [periodSelections, setPeriodSelections] = useState<number[]>([0, 2, 6, 29]);
@@ -70,6 +85,12 @@ export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
     // 盈利因子 = 总盈利 / 总亏损（备用口径，当前未展示）
     const profitFactor = lossTotal < 0 ? winTotal / Math.abs(lossTotal) : Number.NaN;
 
+    // 期望值 = 胜率×平均盈利 − 亏损率×平均亏损（数学上等价于 净盈亏/笔数，
+    // 用胜率与均值展开更能反映系统特性）。无交易时为 NaN → 渲染 '-'。
+    const winRate = tradeCount > 0 ? winCount / tradeCount : 0;
+    const lossRate = tradeCount > 0 ? lossCount / tradeCount : 0;
+    const expectancy = tradeCount > 0 ? winRate * avgWin - lossRate * avgLoss : Number.NaN;
+
     return {
       tradeCount,
       winTotal,
@@ -80,6 +101,7 @@ export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
       winRate: tradeCount > 0 ? Math.round((winCount / tradeCount) * 100) : 0,
       profitRatio,
       profitFactor,
+      expectancy,
     };
   }, [filteredTrades]);
 
@@ -164,6 +186,76 @@ export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
     return { points, totalDep: cumDep, totalWit: cumWit, totalPL: cumPL, returnRate };
   }, [trades, fundRecords]);
 
+  /**
+   * 最大回撤（按资金曲线）：遍历逐日余额，取「历史峰值 − 当前值」的最大跌幅，
+   * 比率以**当时的峰值**为分母（标准定义），而不是全局峰值。
+   * 资金曲线 ≤ 0 时不计回撤（负值下比率无意义）。
+   * 注意：出金会拉低资金曲线，可能被计为回撤，这是本口径的已知特性。
+   */
+  const maxDrawdown = useMemo<MaxDrawdown>(() => {
+    if (!chartData || chartData.points.length === 0) {
+      return { percent: 0, amount: 0 };
+    }
+
+    let peak = Number.NEGATIVE_INFINITY;
+    let worstPercent = 0;
+    let worstAmount = 0;
+
+    for (const p of chartData.points) {
+      if (p.balance > peak) peak = p.balance;
+      if (peak <= 0) continue;
+      const drop = peak - p.balance;
+      if (drop <= 0) continue;
+      const percent = (drop / peak) * 100;
+      if (percent > worstPercent) {
+        worstPercent = percent;
+        worstAmount = drop;
+      }
+    }
+
+    // percent 取负号用于展示（-12.3% 表示回撤），amount 为正数
+    return { percent: -worstPercent, amount: worstAmount };
+  }, [chartData]);
+
+  /**
+   * 连胜 / 连亏（按开仓时间升序，只统计已平仓）。
+   * 打平（盈亏 = 0）视为打断，既不续连胜也不续连亏——这是最严格的口径。
+   */
+  const streaks = useMemo<StreakStats>(() => {
+    const closed = filteredTrades.filter((t) => t.isClosed);
+    const sorted = [...closed].sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return (a.openTime ?? '') < (b.openTime ?? '') ? -1 : 1;
+    });
+
+    let currentType: StreakType = 'none';
+    let currentLength = 0;
+    let maxWin = 0;
+    let maxLoss = 0;
+
+    for (const t of sorted) {
+      const pl = Number(t.profitLoss) || 0;
+      const type: StreakType = pl > 0 ? 'win' : pl < 0 ? 'loss' : 'none';
+
+      if (type === 'none') {
+        currentType = 'none';
+        currentLength = 0;
+        continue;
+      }
+
+      currentLength = type === currentType ? currentLength + 1 : 1;
+      currentType = type;
+      if (type === 'win') maxWin = Math.max(maxWin, currentLength);
+      else maxLoss = Math.max(maxLoss, currentLength);
+    }
+
+    return {
+      current: { type: currentType, length: currentLength },
+      maxWin,
+      maxLoss,
+    };
+  }, [filteredTrades]);
+
   return {
     periodSelections,
     setPeriodSelections,
@@ -179,5 +271,7 @@ export function useTradeStats(trades: Trade[], fundRecords: FundRecord[]) {
     totalDeposit,
     totalWithdraw,
     chartData,
+    maxDrawdown,
+    streaks,
   };
 }

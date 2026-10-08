@@ -5,6 +5,13 @@ import { api } from '@/lib/api';
 import type { Account, Trade, FundRecord } from '@/lib/schema';
 import { DEFAULT_ACCOUNT_ID } from '@/lib/schema';
 
+/** 与服务端一致的排序：date 降序，同日的新记录插在最前（服务端再按 created_at 降序） */
+function insertByDateDesc<T extends { date: string }>(list: T[], item: T): T[] {
+  const index = list.findIndex((x) => x.date <= item.date);
+  if (index === -1) return [...list, item];
+  return [...list.slice(0, index), item, ...list.slice(index)];
+}
+
 export function useTradingData(initialAccountId: number = DEFAULT_ACCOUNT_ID) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [currentAccountId, setCurrentAccountId] = useState<number>(initialAccountId);
@@ -73,6 +80,31 @@ export function useTradingData(initialAccountId: number = DEFAULT_ACCOUNT_ID) {
     return list;
   }, [loadAccounts, currentAccountId]);
 
+  // ── 写操作后的本地更新 ────────────────────────────────────────────────
+  // 写接口已返回「权威记录 + 权威余额」，直接落到本地 state，
+  // 省掉一次全量刷新（一次跨境往返 ≈ 600-800ms）。排序规则与服务端一致：
+  // date 降序，同日新记录在前（服务端再按 created_at 降序）。
+
+  const applyTradeSaved = useCallback((trade: Trade, balance: number) => {
+    setBalance(balance);
+    setTrades((prev) => insertByDateDesc(prev.filter((t) => t.id !== trade.id), trade));
+  }, []);
+
+  const applyTradeDeleted = useCallback((id: string, balance: number) => {
+    setBalance(balance);
+    setTrades((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const applyFundSaved = useCallback((record: FundRecord, balance: number) => {
+    setBalance(balance);
+    setFundRecords((prev) => insertByDateDesc(prev.filter((r) => r.id !== record.id), record));
+  }, []);
+
+  const applyFundDeleted = useCallback((id: string, balance: number) => {
+    setBalance(balance);
+    setFundRecords((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
   return {
     accounts,
     currentAccountId,
@@ -87,5 +119,9 @@ export function useTradingData(initialAccountId: number = DEFAULT_ACCOUNT_ID) {
     error,
     loadData,
     refreshAccounts,
+    applyTradeSaved,
+    applyTradeDeleted,
+    applyFundSaved,
+    applyFundDeleted,
   };
 }

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { DevInspector } from '@/components/DevInspector';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -29,12 +28,9 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const isDev = process.env.NODE_ENV === 'development';
-
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {isDev && <DevInspector />}
         {children}
       </body>
     </html>

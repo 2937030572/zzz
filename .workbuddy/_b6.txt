@@ -1,0 +1,18 @@
+﻿鈻?Next.js 16.1.1 (webpack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+node.exe : uncaughtException [Error: EPERM: operation not permitted, open 'C:\Users\king\Documents\GitHub\zzz-verify-tm
+p\trace'] {
+所在位置 行:503 字符: 1
++ & "C:\Program Files\nodejs\node.exe" "node_modules\next\dist\bin\next ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (uncaughtExcepti...y-tmp\trace'] {:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'open',
+  path: 'C:\\Users\\king\\Documents\\GitHub\\zzz-verify-tmp\\trace'
+}
+EXIT=1

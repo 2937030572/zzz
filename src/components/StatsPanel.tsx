@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { PeriodStat } from '@/hooks/useTradeStats';
+import type { PeriodStat, MaxDrawdown, StreakStats } from '@/hooks/useTradeStats';
+import { fmt } from '@/lib/format';
 import { CardHeading, Money, SectionLabel, Stat, toneOf } from './primitives';
 
 const PERIOD_GROUPS: { days: number; label: string }[][] = [
@@ -65,8 +66,13 @@ interface Props {
     winRate: number;
     /** 盈亏比 = 平均每笔盈利 / 平均每笔亏损；无亏损笔数时为 Infinity */
     profitRatio: number;
+    /** 期望值 = 胜率×平均盈利 − 亏损率×平均亏损（等价于每笔净盈亏） */
+    expectancy: number;
   };
   tradeCount: number;
+  /** 最大回撤（按资金曲线） */
+  maxDrawdown: MaxDrawdown;
+  streaks: StreakStats;
 }
 
 export function StatsPanel({
@@ -81,11 +87,17 @@ export function StatsPanel({
   onQuickRange,
   stats,
   tradeCount,
+  maxDrawdown,
+  streaks,
 }: Props) {
+  const { type: curType, length: curLength } = streaks.current;
+  const curText =
+    curLength > 0 ? `${curLength} 连${curType === 'win' ? '胜' : '亏'}` : '—';
+  const curTone = curType === 'win' ? 'up' : curType === 'loss' ? 'down' : 'neutral';
   return (
     <Card>
       <CardHeader>
-        <CardHeading title="交易统计" hint="按开仓日期筛选，统计区间内的盈亏表现" />
+        <CardHeading title="交易统计" hint="仅统计当前账户，按开仓日期筛选区间表现" />
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -211,7 +223,7 @@ export function StatsPanel({
             <Stat label="亏损金额" value={stats.lossTotal} tone="down" signed />
             <Stat label="亏损笔数" value={stats.lossCount} format="int" />
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Stat label="净盈亏" value={stats.total} tone={toneOf(stats.total)} signed />
             <Stat label="交易笔数" value={tradeCount} format="int" />
             <Stat label="胜率" value={stats.winRate} format="percent" />
@@ -228,8 +240,37 @@ export function StatsPanel({
                   : 'neutral'
               }
             />
+            <Stat
+              label="期望值"
+              value={stats.expectancy}
+              tone={toneOf(stats.expectancy)}
+              signed
+              hint="每笔期望收益"
+            />
           </div>
-          <p className="text-xs text-muted-foreground">盈亏比 = 平均每笔盈利 ÷ 平均每笔亏损</p>
+          <p className="text-xs text-muted-foreground">
+            盈亏比 = 平均每笔盈利 ÷ 平均每笔亏损；期望值 = 胜率×平均盈利 − 亏损率×平均亏损
+          </p>
+        </div>
+
+        {/* 风险与连胜 */}
+        <div className="space-y-3 border-t border-border pt-5">
+          <SectionLabel>风险与连胜</SectionLabel>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat
+              label="最大回撤"
+              value={maxDrawdown.percent}
+              format="percent1"
+              tone={maxDrawdown.percent < 0 ? 'down' : 'neutral'}
+              hint={maxDrawdown.amount > 0 ? `回撤金额 ${fmt(maxDrawdown.amount)}` : undefined}
+            />
+            <Stat label="当前连胜/连亏" value={curText} format="text" tone={curTone} />
+            <Stat label="最长连胜" value={streaks.maxWin} format="int" tone="up" />
+            <Stat label="最长连亏" value={streaks.maxLoss} format="int" tone="down" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            最大回撤按资金曲线计算（出金会拉低曲线）；连胜连亏只统计已平仓交易，打平视为打断
+          </p>
         </div>
       </CardContent>
     </Card>

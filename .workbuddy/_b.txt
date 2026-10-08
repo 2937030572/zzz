@@ -1,0 +1,17 @@
+﻿node.exe : 
+所在位置 行:503 字符: 1
++ & "C:\Program Files\nodejs\node.exe" "node_modules\next\dist\bin\next ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+> Build error occurred
+Error: [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":50,"threshold":50,"scope":"turn","targets":["C:\\Users
+\\king\\Documents\\GitHub\\zzz\\.next\\trace"],"targetCount":1}
+    at checkBulkDeleteGuard (C:\Users\king\AppData\Local\Programs\WorkBuddy\resources\app.asar.unpacked\cli\vendor\shim
+\node-safe-delete-shim.cjs:239:19)
+    at tryTrash (C:\Users\king\AppData\Local\Programs\WorkBuddy\resources\app.asar.unpacked\cli\vendor\shim\node-safe-d
+elete-shim.cjs:591:5)
+    at Object.unlinkSync (C:\Users\king\AppData\Local\Programs\WorkBuddy\resources\app.asar.unpacked\cli\vendor\shim\no
+de-safe-delete-shim.cjs:665:9)
+EXIT=1
