@@ -10,11 +10,14 @@ import { DEFAULT_ACCOUNT_ID } from '@/lib/schema';
 import { useTradingData } from '@/hooks/useTradingData';
 import { useTradeForm } from '@/hooks/useTradeForm';
 import { useTradeStats } from '@/hooks/useTradeStats';
+import { useQuickOptions } from '@/hooks/useQuickOptions';
+import type { QuickKind } from '@/lib/quickOptions';
 import { getCloseReasonText } from '@/lib/format';
 import { daysAgoStr, todayStr } from '@/lib/date';
 import { BalanceCard } from '@/components/BalanceCard';
 import { EquityChart } from '@/components/EquityChart';
 import { OtherReasonDialog } from '@/components/OtherReasonDialog';
+import { QuickOptionsDialog } from '@/components/QuickOptionsDialog';
 import { StatsPanel } from '@/components/StatsPanel';
 import { TradeDialog } from '@/components/TradeDialog';
 import { TradeTable } from '@/components/TradeTable';
@@ -29,10 +32,13 @@ export default function TradingApp() {
   const data = useTradingData(DEFAULT_ACCOUNT_ID);
   const form = useTradeForm(data.balance);
   const stats = useTradeStats(data.trades, data.fundRecords);
+  const quick = useQuickOptions();
 
   const [mode, setMode] = useState<DialogMode>(null);
   const [editing, setEditing] = useState<Trade | null>(null);
   const [busy, setBusy] = useState(false);
+  const [quickKind, setQuickKind] = useState<QuickKind>('symbols');
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const { currentAccountId, loadData, refreshAccounts } = data;
 
@@ -50,6 +56,20 @@ export default function TradingApp() {
     },
     []
   );
+
+  // ── 快捷配置 ──────────────────────────────────────────────────────────────
+
+  const openQuickOptions = useCallback((kind: QuickKind) => {
+    setQuickKind(kind);
+    setQuickOpen(true);
+  }, []);
+
+  /** 新增交易时把用户的第一个方向作为默认值预填 */
+  const openCreateTrade = useCallback(() => {
+    form.reset({ direction: quick.directions[0] ?? '' });
+    setEditing(null);
+    setMode('create');
+  }, [form, quick.directions]);
 
   // ── 账户 ──────────────────────────────────────────────────────────────────
 
@@ -190,6 +210,7 @@ export default function TradingApp() {
       totalWithdraw: stats.totalWithdraw,
       trades: data.trades.map((t) => ({
         交易品种: t.symbol,
+        交易方向: t.direction || '未指定',
         入场策略: t.strategy,
         仓位: `${t.position}%`,
         开仓金额: t.openAmount,
@@ -296,7 +317,7 @@ export default function TradingApp() {
             action={
               <div className="flex gap-2">
                 <OtherReasonDialog trades={stats.otherReasonTrades} />
-                <Button size="sm" onClick={() => setMode('create')}>
+                <Button size="sm" onClick={openCreateTrade}>
                   记一笔
                 </Button>
               </div>
@@ -318,7 +339,21 @@ export default function TradingApp() {
         form={form}
         busy={busy}
         onSubmit={handleSubmitTrade}
+        symbols={quick.symbols}
+        directions={quick.directions}
+        onManageQuickOptions={openQuickOptions}
       />
+
+      {quickOpen && (
+        <QuickOptionsDialog
+          open
+          onOpenChange={setQuickOpen}
+          data={quick.raw}
+          syncError={quick.syncError}
+          initialKind={quickKind}
+          onSave={quick.save}
+        />
+      )}
     </main>
   );
 }

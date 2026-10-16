@@ -21,6 +21,23 @@ function fail(message: string, status = 500, error?: unknown) {
   return NextResponse.json({ error: message }, { status });
 }
 
+/**
+ * 迁移脚本 003 会给 trades 增加 direction 列。
+ * 为了让「没跑迁移」的部署不至于直接写不进交易，检测到缺列时自动去掉该字段重试一次。
+ */
+function isMissingColumn(error: unknown, column: string): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  if (!e) return false;
+  const text = `${e.code ?? ''} ${e.message ?? ''}`.toLowerCase();
+  return text.includes('42703') || (text.includes('column') && text.includes(column));
+}
+
+function withoutDirection(payload: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...payload };
+  delete rest.direction;
+  return rest;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -59,26 +76,27 @@ export async function POST(request: Request) {
     const input = parsed.data;
     const sb = getSupabase();
 
-    const { data: trade, error } = await sb
-      .from('trades')
-      .insert({
-        symbol: input.symbol,
-        strategy: input.strategy,
-        position: input.position,
-        open_amount: String(input.openAmount),
-        open_time: input.openTime,
-        close_reason: input.isClosed ? input.closeReason : 'pending',
-        remark: input.closeReason === 'other' ? (input.remark ?? null) : null,
-        profit_loss: String(input.isClosed ? input.profitLoss : 0),
-        date: input.date,
-        is_closed: input.isClosed,
-        account_id: input.accountId,
-      })
-      .select()
-      .single();
+    const insertPayload: Record<string, unknown> = {
+      symbol: input.symbol,
+      direction: input.direction,
+      strategy: input.strategy,
+      position: input.position,
+      open_amount: String(input.openAmount),
+      open_time: input.openTime,
+      close_reason: input.isClosed ? input.closeReason : 'pending',
+      remark: input.closeReason === 'other' ? (input.remark ?? null) : null,
+      profit_loss: String(input.isClosed ? input.profitLoss : 0),
+      date: input.date,
+      is_closed: input.isClosed,
+      account_id: input.accountId,
+    };
 
-    if (error) throw error;
-    const insertedId = trade.id as string;
+    let result = await sb.from('trades').insert(insertPayload).select().single();
+    if (result.error && isMissingColumn(result.error, 'direction')) {
+      result = await sb.from('trades').insert(withoutDirection(insertPayload)).select().single();
+    }
+    if (result.error) throw result.error;
+    const insertedId = result.data.id as string;
 
     const newBalance = await recalcAndPersistBalance(input.accountId);
 
@@ -90,7 +108,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      trade: parseTrade(trade as Record<string, unknown>),
+      trade: parseTrade(result.data as Record<string, unknown>),
       balance: newBalance,
     });
   } catch (error) {
@@ -121,6 +139,7 @@ export async function PUT(request: Request) {
 
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (rest.symbol !== undefined) updateData.symbol = rest.symbol;
+    if (rest.direction !== undefined) updateData.direction = rest.direction;
     if (rest.strategy !== undefined) updateData.strategy = rest.strategy;
     if (rest.position !== undefined) updateData.position = rest.position;
     if (rest.openAmount !== undefined) updateData.open_amount = String(rest.openAmount);
@@ -141,14 +160,17 @@ export async function PUT(request: Request) {
       updateData.remark = null;
     }
 
-    const { data: updated, error: updateError } = await sb
-      .from('trades')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (updateError) throw updateError;
+    let result = await sb.from('trades').update(updateData).eq('id', id).select().single();
+    if (result.error && isMissingColumn(result.error, 'direction')) {
+      result = await sb
+        .from('trades')
+        .update(withoutDirection(updateData))
+        .eq('id', id)
+        .select()
+        .single();
+    }
+    if (result.error) throw result.error;
+    const updated = result.data;
 
     const newBalance = await recalcAndPersistBalance(accountId);
 
@@ -158,6 +180,7 @@ export async function PUT(request: Request) {
         .from('trades')
         .update({
           symbol: oldTrade.symbol,
+          direction: oldTrade.direction,
           strategy: oldTrade.strategy,
           position: oldTrade.position,
           open_amount: oldTrade.open_amount,

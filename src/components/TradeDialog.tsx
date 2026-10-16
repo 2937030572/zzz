@@ -22,7 +22,9 @@ import {
 } from '@/components/ui/select';
 import type { CloseReason, VolumeTrend, BollContraction, BollWidth, Pattern } from '@/lib/schema';
 import { POSITION_OPTIONS } from '@/lib/tradeLevel';
+import { NO_DIRECTION, type QuickKind } from '@/lib/quickOptions';
 import { fmt, getLevelColor } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import type { useTradeForm } from '@/hooks/useTradeForm';
 
 type Form = ReturnType<typeof useTradeForm>;
@@ -34,6 +36,11 @@ interface Props {
   form: Form;
   busy?: boolean;
   onSubmit: () => Promise<void>;
+  /** 用户自定义的快捷标的 */
+  symbols: string[];
+  /** 用户自定义的交易方向 */
+  directions: string[];
+  onManageQuickOptions: (kind: QuickKind) => void;
 }
 
 const VOLUME_OPTIONS: { value: VolumeTrend; label: string }[] = [
@@ -69,9 +76,25 @@ const CLOSE_REASON_OPTIONS: { value: CloseReason; label: string }[] = [
   { value: 'other', label: '其他' },
 ];
 
-export function TradeDialog({ open, onOpenChange, mode, form, busy, onSubmit }: Props) {
+export function TradeDialog({
+  open,
+  onOpenChange,
+  mode,
+  form,
+  busy,
+  onSubmit,
+  symbols,
+  directions,
+  onManageQuickOptions,
+}: Props) {
   const { values, set, openAmount, level } = form;
   const isEdit = mode === 'edit';
+
+  // 编辑历史记录时，若其方向不在当前快捷项里，临时补进下拉，避免显示成空白
+  const directionOptions =
+    values.direction && !directions.includes(values.direction)
+      ? [values.direction, ...directions]
+      : directions;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,24 +108,83 @@ export function TradeDialog({ open, onOpenChange, mode, form, busy, onSubmit }: 
 
         <div className="space-y-5 py-2">
           <div className="space-y-2">
-            <Label htmlFor="trade-symbol">交易品种</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="trade-symbol">交易品种</Label>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                onClick={() => onManageQuickOptions('symbols')}
+              >
+                管理快捷项
+              </button>
+            </div>
             <Input
               id="trade-symbol"
               placeholder="例如 ETH2406C"
               value={values.symbol}
               onChange={(e) => set('symbol', e.target.value)}
             />
+            {symbols.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {symbols.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => set('symbol', item)}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                      values.symbol === item
+                        ? 'border-foreground/40 bg-foreground/5 text-foreground'
+                        : 'border-border text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="trade-open-time">开仓时间</Label>
-            <Input
-              id="trade-open-time"
-              type="datetime-local"
-              value={values.openDateTime}
-              onChange={(e) => set('openDateTime', e.target.value)}
-              className="num"
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="trade-direction">交易方向</Label>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  onClick={() => onManageQuickOptions('directions')}
+                >
+                  管理
+                </button>
+              </div>
+              <Select
+                value={values.direction || NO_DIRECTION}
+                onValueChange={(v) => set('direction', v === NO_DIRECTION ? '' : v)}
+              >
+                <SelectTrigger id="trade-direction">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_DIRECTION}>未指定</SelectItem>
+                  {directionOptions.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="trade-open-time">开仓时间</Label>
+              <Input
+                id="trade-open-time"
+                type="datetime-local"
+                value={values.openDateTime}
+                onChange={(e) => set('openDateTime', e.target.value)}
+                className="num"
+              />
+            </div>
           </div>
 
           {isEdit ? (

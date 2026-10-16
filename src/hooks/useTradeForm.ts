@@ -15,6 +15,8 @@ import { nowDateTimeLocal, splitDateTimeLocal, combineDateTime } from '@/lib/dat
 
 export interface TradeFormValues {
   symbol: string;
+  /** 交易方向，来自用户自定义的快捷项；空串表示未指定 */
+  direction: string;
   strategy: string;
   position: PositionType;
   openDateTime: string;
@@ -31,6 +33,7 @@ export interface TradeFormValues {
 function initialValues(): TradeFormValues {
   return {
     symbol: '',
+    direction: '',
     strategy: '',
     position: 5,
     openDateTime: nowDateTimeLocal(),
@@ -55,11 +58,16 @@ export function useTradeForm(balance: number) {
     []
   );
 
-  const reset = useCallback(() => setValues(initialValues()), []);
+  /** reset 可接受覆盖值，用于把用户配置的默认方向预填进表单 */
+  const reset = useCallback(
+    (overrides?: Partial<TradeFormValues>) => setValues({ ...initialValues(), ...overrides }),
+    []
+  );
 
   /** 用已有交易填充表单（编辑场景） */
   const load = useCallback((trade: {
     symbol: string;
+    direction?: string;
     strategy: string;
     position: number;
     date: string;
@@ -72,6 +80,7 @@ export function useTradeForm(balance: number) {
     setValues((prev) => ({
       ...prev,
       symbol: trade.symbol,
+      direction: trade.direction ?? '',
       strategy: trade.strategy,
       position: trade.position as PositionType,
       openDateTime: combineDateTime(trade.date, trade.openTime),
@@ -110,6 +119,7 @@ export function useTradeForm(balance: number) {
 
       return {
         symbol: values.symbol.trim(),
+        direction: values.direction.trim(),
         strategy: mode === 'create' ? strategyText : values.strategy.trim(),
         position: values.position,
         openAmount,

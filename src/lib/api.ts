@@ -74,6 +74,13 @@ const fundRecordsRes = z.object({ records: z.array(fundRecordSchema) });
 const fundWriteRes = z.object({ record: fundRecordSchema, balance: z.number() });
 const deleteRes = z.object({ success: z.boolean(), balance: z.number() });
 
+const preferencesRes = z.object({
+  symbols: z.array(z.string()),
+  directions: z.array(z.string()),
+  /** 服务端时钟的时间戳；0 表示该用户尚未保存过任何配置 */
+  updatedAt: z.number(),
+});
+
 // ── API ─────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -109,6 +116,16 @@ export const api = {
       request('/fund-records', { method: 'POST', body: JSON.stringify(data) }, fundWriteRes),
     delete: (id: string, accountId?: number) =>
       request(`/fund-records${qs({ id, accountId })}`, { method: 'DELETE' }, deleteRes),
+  },
+
+  preferences: {
+    get: () => request('/preferences', undefined, preferencesRes),
+    save: (data: { symbols: string[]; directions: string[] }) =>
+      request(
+        '/preferences',
+        { method: 'PUT', body: JSON.stringify(data) },
+        preferencesRes
+      ),
   },
 };
 

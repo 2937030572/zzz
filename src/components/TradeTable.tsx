@@ -57,7 +57,14 @@ export function TradeTable({ trades, onEdit, onDelete, action }: Props) {
                   const pl = Number(trade.profitLoss) || 0;
                   return (
                     <TableRow key={trade.id}>
-                      <TableCell className="font-medium">{trade.symbol}</TableCell>
+                      <TableCell className="font-medium">
+                        {trade.symbol}
+                        {trade.direction && (
+                          <span className="ml-1.5 rounded border border-border px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+                            {trade.direction}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="num text-xs text-muted-foreground">
                         {formatTradeDateTime(trade.date, trade.openTime)}
                       </TableCell>

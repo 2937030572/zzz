@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DIRECTION_MAX_LEN } from './quickOptions';
 
 /** 默认账户 ID：历史数据中 account_id 为 null 的记录一律归属于该账户 */
 export const DEFAULT_ACCOUNT_ID = 1;
@@ -42,6 +43,8 @@ export const tradeSchema = z.object({
   id: z.string(),
   symbol: z.string(),
   strategy: z.string(),
+  /** 交易方向（做多/做空/买入/卖出…），来自用户自定义的快捷项；未填时为空串 */
+  direction: z.string().default(''),
   position: z.number(),
   openAmount: z.number(),
   openTime: z.string(),
@@ -77,6 +80,7 @@ export function parseTrade(row: Record<string, unknown>): Trade {
     id: String(row.id ?? ''),
     symbol: String(row.symbol ?? ''),
     strategy: String(row.strategy ?? ''),
+    direction: String(row.direction ?? ''),
     position: Number(row.position ?? 0) || 0,
     openAmount: num.parse(row.open_amount ?? row.openAmount ?? 0),
     openTime: String(row.open_time ?? row.openTime ?? ''),
@@ -148,6 +152,7 @@ const optionalAccountId = z
 export const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, '交易品种不能为空').max(64),
   strategy: z.string().trim().max(128).optional().default(''),
+  direction: z.string().trim().max(DIRECTION_MAX_LEN).optional().default(''),
   position: z.coerce.number().min(0).max(100).optional().default(0),
   openAmount: finiteNonNegative.optional().default(0),
   openTime: timeStrSchema,
