@@ -32,6 +32,13 @@ interface Props {
  * 操作按钮默认隐藏，鼠标悬停该行或键盘聚焦时浮出（触屏设备常驻显示）。
  */
 export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) {
+  /** 整行点击打开详情；若用户是在选中文本则忽略，避免复制品种时误触发 */
+  const handleRowClick = (trade: Trade) => {
+    const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (selection && selection.toString().trim()) return;
+    onView(trade);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -45,18 +52,20 @@ export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) 
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <Table className="table-fixed min-w-[1020px]">
+            {/* 列宽合计 896px：在 1024px 视口下（主区 976 - 卡片内边距 48 = 928）可完整放下，
+                无需横向滚动，操作列也就不会被挤出可视区。更窄的窗口靠 sticky 兜底。 */}
+            <Table className="table-fixed min-w-[880px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[130px]">品种</TableHead>
-                  <TableHead className="w-[110px]">开仓时间</TableHead>
-                  <TableHead className="w-[150px]">策略</TableHead>
-                  <TableHead className="w-[170px]">复盘</TableHead>
-                  <TableHead className="w-[64px]">仓位</TableHead>
-                  <TableHead className="w-[96px]">开仓金额</TableHead>
-                  <TableHead className="w-[96px]">盈亏</TableHead>
-                  <TableHead className="w-[104px]">状态</TableHead>
-                  <TableHead className="w-[100px]" />
+                  <TableHead className="w-[116px]">品种</TableHead>
+                  <TableHead className="w-[98px]">开仓时间</TableHead>
+                  <TableHead className="w-[128px]">策略</TableHead>
+                  <TableHead className="w-[134px]">复盘</TableHead>
+                  <TableHead className="w-[54px]">仓位</TableHead>
+                  <TableHead className="w-[84px]">开仓金额</TableHead>
+                  <TableHead className="w-[84px]">盈亏</TableHead>
+                  <TableHead className="w-[90px]">状态</TableHead>
+                  <TableHead className="w-[108px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -67,7 +76,11 @@ export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) 
                     ? getCloseReasonText(trade.closeReason, trade.remark)
                     : '持有中';
                   return (
-                    <TableRow key={trade.id} className="group h-12">
+                    <TableRow
+                      key={trade.id}
+                      className="row-hover group h-12 cursor-pointer hover:bg-muted"
+                      onClick={() => handleRowClick(trade)}
+                    >
                       <TableCell className="p-2 align-middle">
                         <span className="block truncate" title={trade.symbol}>
                           {trade.symbol}
@@ -131,15 +144,19 @@ export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) 
                         )}
                       </TableCell>
 
-                      <TableCell className="p-2 align-middle">
-                        <div className="flex items-center justify-end gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                      {/* sticky 到右侧：窗口再窄、表格再怎么横向滚动，操作按钮永远在可视区内 */}
+                      <TableCell className="sticky right-0 z-[1] bg-card p-2 align-middle group-hover:bg-muted">
+                        <div className="row-actions flex items-center justify-end gap-0.5">
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-muted-foreground"
                             title="编辑"
                             aria-label="编辑"
-                            onClick={() => onEdit(trade)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEdit(trade);
+                            }}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -149,7 +166,10 @@ export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) 
                             className="h-7 w-7 text-muted-foreground"
                             title="查看详情"
                             aria-label="查看详情"
-                            onClick={() => onView(trade)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onView(trade);
+                            }}
                           >
                             <Maximize2 className="h-3.5 w-3.5" />
                           </Button>
@@ -159,7 +179,8 @@ export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) 
                             className="h-7 w-7 text-muted-foreground hover:text-down"
                             title="删除"
                             aria-label="删除"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               if (window.confirm('删除这条交易记录？')) onDelete(trade.id);
                             }}
                           >
