@@ -22,20 +22,42 @@ function fail(message: string, status = 500, error?: unknown) {
 }
 
 /**
- * 迁移脚本 003 会给 trades 增加 direction 列。
- * 为了让「没跑迁移」的部署不至于直接写不进交易，检测到缺列时自动去掉该字段重试一次。
+ * 后加的可选列（direction 来自 003，复盘字段来自 004）。
+ * 迁移脚本没跑时表结构可能是旧的，写入失败会逐个剔除缺列后重试，
+ * 保证「没跑迁移」也不会写不进交易，只是新字段暂时存不下。
  */
-function isMissingColumn(error: unknown, column: string): boolean {
-  const e = error as { code?: string; message?: string } | null;
-  if (!e) return false;
-  const text = `${e.code ?? ''} ${e.message ?? ''}`.toLowerCase();
-  return text.includes('42703') || (text.includes('column') && text.includes(column));
+const OPTIONAL_COLUMNS = ['direction', 'execution_score', 'discipline_tags', 'emotion'] as const;
+
+function missingColumnOf(error: unknown): string | null {
+  const e = error as { code?: string; message?: string; details?: string } | null;
+  if (!e) return null;
+  const text = `${e.code ?? ''} ${e.message ?? ''} ${e.details ?? ''}`.toLowerCase();
+  const looksMissing =
+    text.includes('42703') ||
+    text.includes('does not exist') ||
+    text.includes('could not find') ||
+    text.includes('schema cache');
+  if (!looksMissing) return null;
+  return OPTIONAL_COLUMNS.find((column) => text.includes(column)) ?? null;
 }
 
-function withoutDirection(payload: Record<string, unknown>): Record<string, unknown> {
-  const rest = { ...payload };
-  delete rest.direction;
-  return rest;
+/** 写入 trades，遇到缺列就剔除该列重试，直到成功或确认是别的错误 */
+async function writeTrade(
+  payload: Record<string, unknown>,
+  run: (data: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>
+): Promise<Record<string, unknown>> {
+  let current = payload;
+  for (let attempt = 0; attempt <= OPTIONAL_COLUMNS.length; attempt += 1) {
+    const result = await run(current);
+    if (!result.error) return result.data as Record<string, unknown>;
+
+    const column = missingColumnOf(result.error);
+    if (!column || !(column in current)) throw result.error;
+
+    current = { ...current };
+    delete current[column];
+  }
+  throw new Error('写入 trades 失败');
 }
 
 export async function GET(request: Request) {
@@ -89,14 +111,15 @@ export async function POST(request: Request) {
       date: input.date,
       is_closed: input.isClosed,
       account_id: input.accountId,
+      execution_score: input.executionScore,
+      discipline_tags: input.disciplineTags,
+      emotion: input.emotion,
     };
 
-    let result = await sb.from('trades').insert(insertPayload).select().single();
-    if (result.error && isMissingColumn(result.error, 'direction')) {
-      result = await sb.from('trades').insert(withoutDirection(insertPayload)).select().single();
-    }
-    if (result.error) throw result.error;
-    const insertedId = result.data.id as string;
+    const trade = await writeTrade(insertPayload, (data) =>
+      sb.from('trades').insert(data).select().single()
+    );
+    const insertedId = trade.id as string;
 
     const newBalance = await recalcAndPersistBalance(input.accountId);
 
@@ -108,7 +131,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      trade: parseTrade(result.data as Record<string, unknown>),
+      trade: parseTrade(trade),
       balance: newBalance,
     });
   } catch (error) {
@@ -146,6 +169,9 @@ export async function PUT(request: Request) {
     if (rest.openTime !== undefined) updateData.open_time = rest.openTime;
     if (rest.date !== undefined) updateData.date = rest.date;
     if (rest.isClosed !== undefined) updateData.is_closed = rest.isClosed;
+    if (rest.executionScore !== undefined) updateData.execution_score = rest.executionScore;
+    if (rest.disciplineTags !== undefined) updateData.discipline_tags = rest.disciplineTags;
+    if (rest.emotion !== undefined) updateData.emotion = rest.emotion;
     const closed = rest.isClosed ?? Boolean(oldTrade.is_closed);
     if (rest.isClosed !== undefined || rest.closeReason !== undefined) {
       updateData.close_reason = closed ? (rest.closeReason ?? oldTrade.close_reason) : 'pending';
@@ -160,17 +186,9 @@ export async function PUT(request: Request) {
       updateData.remark = null;
     }
 
-    let result = await sb.from('trades').update(updateData).eq('id', id).select().single();
-    if (result.error && isMissingColumn(result.error, 'direction')) {
-      result = await sb
-        .from('trades')
-        .update(withoutDirection(updateData))
-        .eq('id', id)
-        .select()
-        .single();
-    }
-    if (result.error) throw result.error;
-    const updated = result.data;
+    const updated = await writeTrade(updateData, (data) =>
+      sb.from('trades').update(data).eq('id', id).select().single()
+    );
 
     const newBalance = await recalcAndPersistBalance(accountId);
 
@@ -190,6 +208,9 @@ export async function PUT(request: Request) {
           profit_loss: oldTrade.profit_loss,
           date: oldTrade.date,
           is_closed: oldTrade.is_closed,
+          execution_score: oldTrade.execution_score,
+          discipline_tags: oldTrade.discipline_tags,
+          emotion: oldTrade.emotion,
         })
         .eq('id', id);
       await recalcAndPersistBalance(accountId);
@@ -197,7 +218,7 @@ export async function PUT(request: Request) {
     }
 
     return NextResponse.json({
-      trade: parseTrade(updated as Record<string, unknown>),
+      trade: parseTrade(updated),
       balance: newBalance,
     });
   } catch (error) {

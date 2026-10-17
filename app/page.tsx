@@ -13,6 +13,7 @@ import { useTradeStats } from '@/hooks/useTradeStats';
 import { useQuickOptions } from '@/hooks/useQuickOptions';
 import type { QuickKind } from '@/lib/quickOptions';
 import { getCloseReasonText } from '@/lib/format';
+import { disciplineLabel, emotionLabel, executionLabel } from '@/lib/review';
 import { daysAgoStr, todayStr } from '@/lib/date';
 import { BalanceCard } from '@/components/BalanceCard';
 import { EquityChart } from '@/components/EquityChart';
@@ -22,7 +23,7 @@ import { StatsPanel } from '@/components/StatsPanel';
 import { TradeDialog } from '@/components/TradeDialog';
 import { TradeTable } from '@/components/TradeTable';
 
-type DialogMode = 'create' | 'edit' | null;
+type DialogMode = 'create' | 'edit' | 'view' | null;
 
 function toMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -147,6 +148,13 @@ export default function TradingApp() {
     setMode('edit');
   };
 
+  /** 详情只读态：字段已载入表单，切换到编辑模式即可直接改 */
+  const handleViewTrade = (trade: Trade) => {
+    form.load(trade);
+    setEditing(trade);
+    setMode('view');
+  };
+
   const handleSubmitTrade = async () => {
     if (!form.values.symbol.trim()) {
       toast.error('请填写交易品种');
@@ -218,6 +226,9 @@ export default function TradingApp() {
         平仓原因: getCloseReasonText(t.closeReason, t.remark),
         盈亏金额: t.profitLoss,
         状态: t.isClosed ? '已平仓' : '持有中',
+        执行度: executionLabel(t.executionScore),
+        纪律标签: t.disciplineTags.map(disciplineLabel).join('、') || '无',
+        情绪状态: emotionLabel(t.emotion),
         日期: t.date,
       })),
       fundRecords: data.fundRecords.map((r) => ({
@@ -313,6 +324,7 @@ export default function TradingApp() {
           <TradeTable
             trades={stats.filteredTrades}
             onEdit={handleEditTrade}
+            onView={handleViewTrade}
             onDelete={handleDeleteTrade}
             action={
               <div className="flex gap-2">
@@ -335,10 +347,11 @@ export default function TradingApp() {
             form.reset();
           }
         }}
-        mode={mode === 'edit' ? 'edit' : 'create'}
+        mode={mode ?? 'create'}
         form={form}
         busy={busy}
         onSubmit={handleSubmitTrade}
+        onRequestEdit={() => setMode('edit')}
         symbols={quick.symbols}
         directions={quick.directions}
         onManageQuickOptions={openQuickOptions}

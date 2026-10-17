@@ -1,5 +1,14 @@
 import { z } from 'zod';
 import { DIRECTION_MAX_LEN } from './quickOptions';
+import {
+  EXECUTION_MAX,
+  DISCIPLINE_TAG_OPTIONS,
+  clampExecutionScore,
+  disciplineTagSchema,
+  emotionSchema,
+  parseDisciplineTags,
+  parseEmotion,
+} from './review';
 
 /** 默认账户 ID：历史数据中 account_id 为 null 的记录一律归属于该账户 */
 export const DEFAULT_ACCOUNT_ID = 1;
@@ -56,6 +65,12 @@ export const tradeSchema = z.object({
   accountId: z.number().nullable().optional(),
   source: z.string().default('manual'),
   isReadOnly: z.boolean().default(false),
+  /** 执行度：0 = 未评分，1–5 */
+  executionScore: z.number().int().min(0).max(EXECUTION_MAX).default(0),
+  /** 纪律标签，多选，按系统定义顺序存放 */
+  disciplineTags: z.array(disciplineTagSchema).default([]),
+  /** 情绪状态，空串表示未记录 */
+  emotion: z.union([emotionSchema, z.literal('')]).default(''),
 });
 export type Trade = z.infer<typeof tradeSchema>;
 
@@ -92,6 +107,10 @@ export function parseTrade(row: Record<string, unknown>): Trade {
     accountId: row.account_id != null ? Number(row.account_id) : null,
     source: String(row.source ?? 'manual'),
     isReadOnly: Boolean(row.isReadOnly ?? false),
+    // 复盘字段在旧数据里可能整列缺失，全部走宽松解析，缺列时回落到「未填写」
+    executionScore: clampExecutionScore(row.execution_score ?? row.executionScore),
+    disciplineTags: parseDisciplineTags(row.discipline_tags ?? row.disciplineTags),
+    emotion: parseEmotion(row.emotion),
   });
 }
 
@@ -162,6 +181,20 @@ export const createTradeSchema = z.object({
   date: dateStrSchema,
   isClosed: z.coerce.boolean().optional().default(true),
   accountId: optionalAccountId,
+  // ── 复盘字段 ──
+  executionScore: z.coerce
+    .number()
+    .int()
+    .min(0, `执行度必须是 0-${EXECUTION_MAX} 的整数`)
+    .max(EXECUTION_MAX, `执行度必须是 0-${EXECUTION_MAX} 的整数`)
+    .optional()
+    .default(0),
+  disciplineTags: z
+    .array(disciplineTagSchema)
+    .max(DISCIPLINE_TAG_OPTIONS.length, '纪律标签数量超限')
+    .optional()
+    .default([]),
+  emotion: z.union([emotionSchema, z.literal('')]).optional().default(''),
 });
 export type CreateTradeInput = z.infer<typeof createTradeSchema>;
 

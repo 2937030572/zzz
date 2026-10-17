@@ -10,6 +10,8 @@ import type {
   Pattern,
   CreateTradeInput,
 } from '@/lib/schema';
+import type { DisciplineTag, Emotion } from '@/lib/review';
+import { clampExecutionScore, parseDisciplineTags, parseEmotion } from '@/lib/review';
 import { calcTradeLevel, buildStrategyText } from '@/lib/tradeLevel';
 import { nowDateTimeLocal, splitDateTimeLocal, combineDateTime } from '@/lib/date';
 
@@ -28,6 +30,10 @@ export interface TradeFormValues {
   bollContraction: BollContraction;
   bollWidth: BollWidth;
   pattern: Pattern;
+  // ── 复盘字段 ──
+  executionScore: number;
+  disciplineTags: DisciplineTag[];
+  emotion: Emotion;
 }
 
 function initialValues(): TradeFormValues {
@@ -45,6 +51,9 @@ function initialValues(): TradeFormValues {
     bollContraction: '1h',
     bollWidth: 'not_converged',
     pattern: 'none',
+    executionScore: 0,
+    disciplineTags: [],
+    emotion: '',
   };
 }
 
@@ -76,6 +85,9 @@ export function useTradeForm(balance: number) {
     remark?: string;
     profitLoss: number;
     isClosed: boolean;
+    executionScore?: number;
+    disciplineTags?: string[];
+    emotion?: string;
   }) => {
     setValues((prev) => ({
       ...prev,
@@ -88,6 +100,9 @@ export function useTradeForm(balance: number) {
       remark: trade.remark ?? '',
       profitLoss: String(trade.profitLoss ?? 0),
       isClosed: trade.isClosed,
+      executionScore: clampExecutionScore(trade.executionScore),
+      disciplineTags: parseDisciplineTags(trade.disciplineTags),
+      emotion: parseEmotion(trade.emotion),
     }));
   }, []);
 
@@ -130,6 +145,9 @@ export function useTradeForm(balance: number) {
         date,
         isClosed: values.isClosed,
         accountId,
+        executionScore: clampExecutionScore(values.executionScore),
+        disciplineTags: parseDisciplineTags(values.disciplineTags),
+        emotion: parseEmotion(values.emotion),
       };
     },
     [values, openAmount]

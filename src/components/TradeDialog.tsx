@@ -23,19 +23,25 @@ import {
 import type { CloseReason, VolumeTrend, BollContraction, BollWidth, Pattern } from '@/lib/schema';
 import { POSITION_OPTIONS } from '@/lib/tradeLevel';
 import { NO_DIRECTION, type QuickKind } from '@/lib/quickOptions';
+import type { DisciplineTag, Emotion } from '@/lib/review';
 import { fmt, getLevelColor } from '@/lib/format';
+import { formatTradeDateTime, splitDateTimeLocal } from '@/lib/date';
 import { cn } from '@/lib/utils';
+import { ReviewDetail, ReviewEditor } from '@/components/TradeReview';
 import type { useTradeForm } from '@/hooks/useTradeForm';
 
 type Form = ReturnType<typeof useTradeForm>;
+type DialogMode = 'create' | 'edit' | 'view';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  mode: 'create' | 'edit';
+  mode: DialogMode;
   form: Form;
   busy?: boolean;
   onSubmit: () => Promise<void>;
+  /** 详情态下的「编辑」入口，由调用方切换到编辑模式 */
+  onRequestEdit?: () => void;
   /** 用户自定义的快捷标的 */
   symbols: string[];
   /** 用户自定义的交易方向 */
@@ -76,6 +82,21 @@ const CLOSE_REASON_OPTIONS: { value: CloseReason; label: string }[] = [
   { value: 'other', label: '其他' },
 ];
 
+const TITLES: Record<DialogMode, { title: string; desc: string }> = {
+  create: { title: '新增交易', desc: '记录一笔交易，分级系统会生成入场策略' },
+  edit: { title: '编辑交易', desc: '修改记录后余额会自动重新结算' },
+  view: { title: '交易详情', desc: '完整字段一览，可直接切换为编辑' },
+};
+
+/** 详情只读态的数值展示，空值统一显示「未填写」 */
+function ReadValue({ value }: { value: string }) {
+  return (
+    <div className="flex min-h-8 items-center text-sm">
+      {value.trim() ? value : <span className="text-muted-foreground">未填写</span>}
+    </div>
+  );
+}
+
 export function TradeDialog({
   open,
   onOpenChange,
@@ -83,12 +104,14 @@ export function TradeDialog({
   form,
   busy,
   onSubmit,
+  onRequestEdit,
   symbols,
   directions,
   onManageQuickOptions,
 }: Props) {
   const { values, set, openAmount, level } = form;
-  const isEdit = mode === 'edit';
+  const readOnly = mode === 'view';
+  const isCreate = mode === 'create';
 
   // 编辑历史记录时，若其方向不在当前快捷项里，临时补进下拉，避免显示成空白
   const directionOptions =
@@ -96,52 +119,73 @@ export function TradeDialog({
       ? [values.direction, ...directions]
       : directions;
 
+  const setReview = (patch: {
+    executionScore?: number;
+    emotion?: Emotion;
+    disciplineTags?: DisciplineTag[];
+  }) => {
+    if (patch.executionScore !== undefined) set('executionScore', patch.executionScore);
+    if (patch.emotion !== undefined) set('emotion', patch.emotion);
+    if (patch.disciplineTags !== undefined) set('disciplineTags', patch.disciplineTags);
+  };
+
+  const openTimeText = (() => {
+    const { date, time } = splitDateTimeLocal(values.openDateTime);
+    return formatTradeDateTime(date, time);
+  })();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[86vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? '编辑交易' : '新增交易'}</DialogTitle>
-          <DialogDescription>
-            {isEdit ? '修改记录后余额会自动重新结算' : '记录一笔交易，分级系统会生成入场策略'}
-          </DialogDescription>
+          <DialogTitle>{TITLES[mode].title}</DialogTitle>
+          <DialogDescription>{TITLES[mode].desc}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="trade-symbol">交易品种</Label>
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                onClick={() => onManageQuickOptions('symbols')}
-              >
-                管理快捷项
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  onClick={() => onManageQuickOptions('symbols')}
+                >
+                  管理快捷项
+                </button>
+              )}
             </div>
-            <Input
-              id="trade-symbol"
-              placeholder="例如 ETH2406C"
-              value={values.symbol}
-              onChange={(e) => set('symbol', e.target.value)}
-            />
-            {symbols.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {symbols.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => set('symbol', item)}
-                    className={cn(
-                      'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                      values.symbol === item
-                        ? 'border-foreground/40 bg-foreground/5 text-foreground'
-                        : 'border-border text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
+            {readOnly ? (
+              <ReadValue value={values.symbol} />
+            ) : (
+              <>
+                <Input
+                  id="trade-symbol"
+                  placeholder="例如 ETH2406C"
+                  value={values.symbol}
+                  onChange={(e) => set('symbol', e.target.value)}
+                />
+                {symbols.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {symbols.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => set('symbol', item)}
+                        className={cn(
+                          'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                          values.symbol === item
+                            ? 'border-foreground/40 bg-foreground/5 text-foreground'
+                            : 'border-border text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -149,55 +193,55 @@ export function TradeDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="trade-direction">交易方向</Label>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                  onClick={() => onManageQuickOptions('directions')}
-                >
-                  管理
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    onClick={() => onManageQuickOptions('directions')}
+                  >
+                    管理
+                  </button>
+                )}
               </div>
-              <Select
-                value={values.direction || NO_DIRECTION}
-                onValueChange={(v) => set('direction', v === NO_DIRECTION ? '' : v)}
-              >
-                <SelectTrigger id="trade-direction">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_DIRECTION}>未指定</SelectItem>
-                  {directionOptions.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {readOnly ? (
+                <ReadValue value={values.direction} />
+              ) : (
+                <Select
+                  value={values.direction || NO_DIRECTION}
+                  onValueChange={(v) => set('direction', v === NO_DIRECTION ? '' : v)}
+                >
+                  <SelectTrigger id="trade-direction">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_DIRECTION}>未指定</SelectItem>
+                    {directionOptions.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="trade-open-time">开仓时间</Label>
-              <Input
-                id="trade-open-time"
-                type="datetime-local"
-                value={values.openDateTime}
-                onChange={(e) => set('openDateTime', e.target.value)}
-                className="num"
-              />
+              {readOnly ? (
+                <ReadValue value={openTimeText} />
+              ) : (
+                <Input
+                  id="trade-open-time"
+                  type="datetime-local"
+                  value={values.openDateTime}
+                  onChange={(e) => set('openDateTime', e.target.value)}
+                  className="num"
+                />
+              )}
             </div>
           </div>
 
-          {isEdit ? (
-            <div className="space-y-2">
-              <Label htmlFor="trade-strategy">入场策略</Label>
-              <Input
-                id="trade-strategy"
-                placeholder="例如 A-/底背离/4h+收缩/未粘合"
-                value={values.strategy}
-                onChange={(e) => set('strategy', e.target.value)}
-              />
-            </div>
-          ) : (
+          {isCreate ? (
             <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
               <Label>交易分级</Label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -272,26 +316,44 @@ export function TradeDialog({
                 </span>
               </div>
             </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="trade-strategy">入场策略</Label>
+              {readOnly ? (
+                <ReadValue value={values.strategy} />
+              ) : (
+                <Input
+                  id="trade-strategy"
+                  placeholder="例如 A-/底背离/4h+收缩/未粘合"
+                  value={values.strategy}
+                  onChange={(e) => set('strategy', e.target.value)}
+                />
+              )}
+            </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="trade-position">仓位</Label>
-              <Select
-                value={String(values.position)}
-                onValueChange={(v) => set('position', Number(v))}
-              >
-                <SelectTrigger id="trade-position" className="num">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {POSITION_OPTIONS.map((opt) => (
-                    <SelectItem key={opt} value={String(opt)}>
-                      {opt}%
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {readOnly ? (
+                <ReadValue value={`${values.position}%`} />
+              ) : (
+                <Select
+                  value={String(values.position)}
+                  onValueChange={(v) => set('position', Number(v))}
+                >
+                  <SelectTrigger id="trade-position" className="num">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {POSITION_OPTIONS.map((opt) => (
+                      <SelectItem key={opt} value={String(opt)}>
+                        {opt}%
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-2">
               <Label>开仓金额</Label>
@@ -305,71 +367,126 @@ export function TradeDialog({
             <Label htmlFor="trade-closed" className="text-sm">
               是否已平仓
             </Label>
-            <Switch
-              id="trade-closed"
-              checked={values.isClosed}
-              onCheckedChange={(v) => set('isClosed', v)}
-            />
+            {readOnly ? (
+              <span className="text-sm">{values.isClosed ? '已平仓' : '持有中'}</span>
+            ) : (
+              <Switch
+                id="trade-closed"
+                checked={values.isClosed}
+                onCheckedChange={(v) => set('isClosed', v)}
+              />
+            )}
           </div>
 
           {values.isClosed && (
             <div className="space-y-4 border-t border-border pt-4">
               <div className="space-y-2">
                 <Label htmlFor="trade-close-reason">平仓原因</Label>
-                <Select
-                  value={values.closeReason}
-                  onValueChange={(v) => set('closeReason', v as CloseReason)}
-                >
-                  <SelectTrigger id="trade-close-reason">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CLOSE_REASON_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {readOnly ? (
+                  <ReadValue
+                    value={
+                      CLOSE_REASON_OPTIONS.find((o) => o.value === values.closeReason)?.label ?? ''
+                    }
+                  />
+                ) : (
+                  <Select
+                    value={values.closeReason}
+                    onValueChange={(v) => set('closeReason', v as CloseReason)}
+                  >
+                    <SelectTrigger id="trade-close-reason">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CLOSE_REASON_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
-              {values.closeReason === 'other' && (
+              {(values.closeReason === 'other' || readOnly) && (
                 <div className="space-y-2">
                   <Label htmlFor="trade-remark">备注</Label>
-                  <Textarea
-                    id="trade-remark"
-                    placeholder="写下这次的问题或经验"
-                    value={values.remark}
-                    onChange={(e) => set('remark', e.target.value)}
-                    rows={3}
-                  />
+                  {readOnly ? (
+                    <div className="whitespace-pre-wrap break-words text-sm">
+                      {values.remark.trim() ? (
+                        values.remark
+                      ) : (
+                        <span className="text-muted-foreground">未填写</span>
+                      )}
+                    </div>
+                  ) : (
+                    <Textarea
+                      id="trade-remark"
+                      placeholder="写下这次的问题或经验"
+                      value={values.remark}
+                      onChange={(e) => set('remark', e.target.value)}
+                      rows={3}
+                    />
+                  )}
                 </div>
               )}
 
               <div className="space-y-2">
                 <Label htmlFor="trade-pl">盈亏金额</Label>
-                <Input
-                  id="trade-pl"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  placeholder="盈利为正，亏损为负"
-                  value={values.profitLoss}
-                  onChange={(e) => set('profitLoss', e.target.value)}
-                  className="num"
-                />
+                {readOnly ? (
+                  <div className="num text-sm">{fmt(values.profitLoss)}</div>
+                ) : (
+                  <Input
+                    id="trade-pl"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    placeholder="盈利为正，亏损为负"
+                    value={values.profitLoss}
+                    onChange={(e) => set('profitLoss', e.target.value)}
+                    className="num"
+                  />
+                )}
               </div>
             </div>
           )}
+
+          <div className="space-y-2 border-t border-border pt-4">
+            <Label>复盘</Label>
+            {readOnly ? (
+              <ReviewDetail
+                score={values.executionScore}
+                emotion={values.emotion}
+                tags={values.disciplineTags}
+              />
+            ) : (
+              <ReviewEditor
+                score={values.executionScore}
+                emotion={values.emotion}
+                tags={values.disciplineTags}
+                onChange={setReview}
+              />
+            )}
+          </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button disabled={busy} onClick={() => void onSubmit()}>
-            {isEdit ? '保存' : '添加'}
-          </Button>
+          {readOnly ? (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                关闭
+              </Button>
+              {onRequestEdit && <Button onClick={onRequestEdit}>编辑</Button>}
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                取消
+              </Button>
+              <Button disabled={busy} onClick={() => void onSubmit()}>
+                {isCreate ? '添加' : '保存'}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

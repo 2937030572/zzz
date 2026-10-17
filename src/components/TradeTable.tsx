@@ -1,9 +1,8 @@
 'use client';
 
-import { MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { Maximize2, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Table,
   TableBody,
@@ -15,16 +14,24 @@ import {
 import type { Trade } from '@/lib/schema';
 import { fmt, getLevelColor, getCloseReasonText } from '@/lib/format';
 import { formatTradeDateTime } from '@/lib/date';
+import { ReviewPreview } from '@/components/TradeReview';
 import { CardHeading, Money, toneOf } from './primitives';
 
 interface Props {
   trades: Trade[];
   onEdit: (trade: Trade) => void;
+  /** 打开详情只读面板 */
+  onView: (trade: Trade) => void;
   onDelete: (id: string) => void;
   action: React.ReactNode;
 }
 
-export function TradeTable({ trades, onEdit, onDelete, action }: Props) {
+/**
+ * 交易列表。
+ * 行高固定、所有单元格单行截断，长备注 / 长策略不会撑开整行；
+ * 操作按钮默认隐藏，鼠标悬停该行或键盘聚焦时浮出（触屏设备常驻显示）。
+ */
+export function TradeTable({ trades, onEdit, onView, onDelete, action }: Props) {
   return (
     <Card>
       <CardHeader>
@@ -38,53 +45,84 @@ export function TradeTable({ trades, onEdit, onDelete, action }: Props) {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="table-fixed min-w-[1020px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="whitespace-nowrap">品种</TableHead>
-                  <TableHead className="whitespace-nowrap">开仓时间</TableHead>
-                  <TableHead className="whitespace-nowrap">策略</TableHead>
-                  <TableHead className="whitespace-nowrap">仓位</TableHead>
-                  <TableHead className="whitespace-nowrap">开仓金额</TableHead>
-                  <TableHead className="whitespace-nowrap">盈亏</TableHead>
-                  <TableHead className="whitespace-nowrap">状态</TableHead>
-                  <TableHead className="w-10" />
+                  <TableHead className="w-[130px]">品种</TableHead>
+                  <TableHead className="w-[110px]">开仓时间</TableHead>
+                  <TableHead className="w-[150px]">策略</TableHead>
+                  <TableHead className="w-[170px]">复盘</TableHead>
+                  <TableHead className="w-[64px]">仓位</TableHead>
+                  <TableHead className="w-[96px]">开仓金额</TableHead>
+                  <TableHead className="w-[96px]">盈亏</TableHead>
+                  <TableHead className="w-[104px]">状态</TableHead>
+                  <TableHead className="w-[100px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {trades.map((trade) => {
                   const [level, ...rest] = trade.strategy.split('/');
                   const pl = Number(trade.profitLoss) || 0;
+                  const statusText = trade.isClosed
+                    ? getCloseReasonText(trade.closeReason, trade.remark)
+                    : '持有中';
                   return (
-                    <TableRow key={trade.id}>
-                      <TableCell className="font-medium">
-                        {trade.symbol}
-                        {trade.direction && (
-                          <span className="ml-1.5 rounded border border-border px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
-                            {trade.direction}
-                          </span>
-                        )}
+                    <TableRow key={trade.id} className="group h-12">
+                      <TableCell className="p-2 align-middle">
+                        <span className="block truncate" title={trade.symbol}>
+                          {trade.symbol}
+                          {trade.direction && (
+                            <span className="ml-1.5 rounded border border-border px-1 py-0.5 text-[11px] font-normal text-muted-foreground">
+                              {trade.direction}
+                            </span>
+                          )}
+                        </span>
                       </TableCell>
-                      <TableCell className="num text-xs text-muted-foreground">
-                        {formatTradeDateTime(trade.date, trade.openTime)}
+
+                      <TableCell className="num p-2 align-middle text-xs text-muted-foreground">
+                        <span className="block truncate">
+                          {formatTradeDateTime(trade.date, trade.openTime)}
+                        </span>
                       </TableCell>
-                      <TableCell className="max-w-[220px]">
-                        <span className={getLevelColor(level)}>{level}</span>
-                        {rest.length > 0 && (
-                          <span className="text-muted-foreground">/{rest.join('/')}</span>
-                        )}
+
+                      <TableCell className="p-2 align-middle">
+                        <span className="block truncate" title={trade.strategy}>
+                          <span className={getLevelColor(level)}>{level}</span>
+                          {rest.length > 0 && (
+                            <span className="text-muted-foreground">/{rest.join('/')}</span>
+                          )}
+                        </span>
                       </TableCell>
-                      <TableCell className="num text-muted-foreground">{trade.position}%</TableCell>
-                      <TableCell className="num text-muted-foreground">
-                        {fmt(trade.openAmount)}
+
+                      <TableCell className="p-2 align-middle">
+                        <span className="block truncate">
+                          <ReviewPreview
+                            score={trade.executionScore}
+                            emotion={trade.emotion}
+                            tags={trade.disciplineTags}
+                          />
+                        </span>
                       </TableCell>
-                      <TableCell>
+
+                      <TableCell className="num p-2 align-middle text-muted-foreground">
+                        <span className="block truncate">{trade.position}%</span>
+                      </TableCell>
+
+                      <TableCell className="num p-2 align-middle text-muted-foreground">
+                        <span className="block truncate">{fmt(trade.openAmount)}</span>
+                      </TableCell>
+
+                      <TableCell className="p-2 align-middle">
                         <Money value={pl} tone={toneOf(pl)} signed className="text-sm font-medium" />
                       </TableCell>
-                      <TableCell>
+
+                      <TableCell className="p-2 align-middle">
                         {trade.isClosed ? (
-                          <span className="text-xs text-muted-foreground">
-                            {getCloseReasonText(trade.closeReason, trade.remark)}
+                          <span
+                            className="block truncate text-xs text-muted-foreground"
+                            title={statusText}
+                          >
+                            {statusText}
                           </span>
                         ) : (
                           <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
@@ -92,41 +130,42 @@ export function TradeTable({ trades, onEdit, onDelete, action }: Props) {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground"
-                              aria-label="操作"
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent align="end" className="w-32 p-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start text-xs"
-                              onClick={() => onEdit(trade)}
-                            >
-                              <Pencil className="mr-2 h-3.5 w-3.5" />
-                              编辑
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start text-xs text-down hover:text-down"
-                              onClick={() => {
-                                if (window.confirm('删除这条交易记录？')) onDelete(trade.id);
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
-                              删除
-                            </Button>
-                          </PopoverContent>
-                        </Popover>
+
+                      <TableCell className="p-2 align-middle">
+                        <div className="flex items-center justify-end gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            title="编辑"
+                            aria-label="编辑"
+                            onClick={() => onEdit(trade)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            title="查看详情"
+                            aria-label="查看详情"
+                            onClick={() => onView(trade)}
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-down"
+                            title="删除"
+                            aria-label="删除"
+                            onClick={() => {
+                              if (window.confirm('删除这条交易记录？')) onDelete(trade.id);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
