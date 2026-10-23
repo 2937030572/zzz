@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Download, RefreshCw } from 'lucide-react';
+import { Activity, Download, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toaster, toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { Account, FundType, Trade } from '@/lib/schema';
 import { DEFAULT_ACCOUNT_ID } from '@/lib/schema';
 import { useTradingData } from '@/hooks/useTradingData';
+import { useTradeBrowser } from '@/hooks/useTradeBrowser';
 import { useTradeForm } from '@/hooks/useTradeForm';
 import { useTradeStats } from '@/hooks/useTradeStats';
 import { useQuickOptions } from '@/hooks/useQuickOptions';
@@ -42,9 +43,15 @@ export default function TradingApp() {
   const [quickOpen, setQuickOpen] = useState(false);
 
   const { currentAccountId, loadData, refreshAccounts } = data;
+  const browser = useTradeBrowser(currentAccountId);
 
-  /** 写操作后统一静默刷新，保证列表顺序与余额都来自服务端权威结果 */
-  const refresh = useCallback(() => loadData(currentAccountId, true), [loadData, currentAccountId]);
+  /** 页面刷新同时更新统计数据与当前筛选页，避免两处内容不同步。 */
+  const refresh = useCallback(
+    async () => {
+      await Promise.all([loadData(currentAccountId, true), browser.refresh()]);
+    },
+    [browser, currentAccountId, loadData]
+  );
 
   const run = useCallback(
     async (fn: () => Promise<void>) => {
@@ -175,10 +182,12 @@ export default function TradingApp() {
         if (mode === 'edit' && editing) {
           const res = await api.trades.update(editing.id, form.buildPayload('edit', currentAccountId));
           data.applyTradeSaved(res.trade, res.balance);
+          await browser.refresh();
           toast.success('交易已更新');
         } else {
           const res = await api.trades.create(form.buildPayload('create', currentAccountId));
           data.applyTradeSaved(res.trade, res.balance);
+          await browser.refresh();
           toast.success('交易已记录');
         }
         form.reset();
@@ -195,6 +204,7 @@ export default function TradingApp() {
       try {
         const res = await api.trades.delete(id, currentAccountId);
         data.applyTradeDeleted(id, res.balance);
+        await browser.refresh();
         toast.success('交易已删除');
       } catch (error) {
         toast.error(toMessage(error, '删除失败'));
@@ -252,14 +262,15 @@ export default function TradingApp() {
   const accounts: Account[] = data.accounts;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+    <main className="app-shell mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
       <Toaster position="top-center" richColors closeButton />
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-medium tracking-tight">交易笔记</h1>
-          <p className="num mt-1 text-sm text-muted-foreground">{todayStr()}</p>
+      <header className="app-header mb-6 flex flex-wrap items-end justify-between gap-4 px-5 py-5 sm:px-6">
+        <div className="relative z-10">
+          <p className="eyebrow"><Activity className="h-3.5 w-3.5 text-up" />Trading journal</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">交易笔记</h1>
+          <p className="num mt-1.5 text-sm text-muted-foreground">{todayStr()} · 记录、复盘、迭代</p>
         </div>
-        <div className="flex gap-2">
+        <div className="relative z-10 flex gap-2">
           <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={data.loading}>
             <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
             刷新
@@ -322,7 +333,19 @@ export default function TradingApp() {
           />
 
           <TradeTable
-            trades={stats.filteredTrades}
+            trades={browser.trades}
+            total={browser.total}
+            page={browser.page}
+            pageSize={browser.pageSize}
+            filters={browser.filters}
+            loading={browser.loading}
+            error={browser.error}
+            symbols={quick.symbols}
+            directions={quick.directions}
+            onFilterChange={browser.updateFilters}
+            onClearFilters={browser.clearFilters}
+            onPageChange={browser.setPage}
+            onRetry={() => void browser.refresh()}
             onEdit={handleEditTrade}
             onView={handleViewTrade}
             onDelete={handleDeleteTrade}

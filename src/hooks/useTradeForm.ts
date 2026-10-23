@@ -21,6 +21,8 @@ export interface TradeFormValues {
   direction: string;
   strategy: string;
   position: PositionType;
+  /** 手填优先；留空时按余额和仓位自动估算 */
+  openAmount: string;
   openDateTime: string;
   closeReason: CloseReason;
   remark: string;
@@ -42,6 +44,7 @@ function initialValues(): TradeFormValues {
     direction: '',
     strategy: '',
     position: 5,
+    openAmount: '',
     openDateTime: nowDateTimeLocal(),
     closeReason: 'profit',
     remark: '',
@@ -79,6 +82,7 @@ export function useTradeForm(balance: number) {
     direction?: string;
     strategy: string;
     position: number;
+    openAmount?: number;
     date: string;
     openTime: string;
     closeReason: CloseReason;
@@ -95,6 +99,7 @@ export function useTradeForm(balance: number) {
       direction: trade.direction ?? '',
       strategy: trade.strategy,
       position: trade.position as PositionType,
+      openAmount: trade.openAmount != null ? String(trade.openAmount) : '',
       openDateTime: combineDateTime(trade.date, trade.openTime),
       closeReason: trade.closeReason,
       remark: trade.remark ?? '',
@@ -106,10 +111,15 @@ export function useTradeForm(balance: number) {
     }));
   }, []);
 
-  const openAmount = useMemo(
+  const suggestedOpenAmount = useMemo(
     () => (Number(balance) * values.position) / 100,
     [balance, values.position]
   );
+
+  const enteredOpenAmount = Number(values.openAmount);
+  const openAmount = values.openAmount.trim() !== '' && Number.isFinite(enteredOpenAmount) && enteredOpenAmount >= 0
+    ? enteredOpenAmount
+    : suggestedOpenAmount;
 
   const level = useMemo(
     () =>
@@ -153,5 +163,5 @@ export function useTradeForm(balance: number) {
     [values, openAmount]
   );
 
-  return { values, set, reset, load, openAmount, level, buildPayload };
+  return { values, set, reset, load, openAmount, suggestedOpenAmount, level, buildPayload };
 }

@@ -41,7 +41,7 @@ export function BalanceCard({
   const [fundType, setFundType] = useState<FundType | null>(null);
 
   return (
-    <Card>
+    <Card className="hero-balance overflow-hidden">
       <CardHeader className="gap-4">
         <CardHeading
           title="资产余额"
@@ -84,11 +84,11 @@ export function BalanceCard({
 
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+          <div className="rounded-xl border border-border/80 bg-card/55 px-3 py-3">
             <div className="text-xs text-muted-foreground">累计入金</div>
             <Money value={totalDeposit} tone="up" className="mt-1 block text-lg font-medium" />
           </div>
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+          <div className="rounded-xl border border-border/80 bg-card/55 px-3 py-3">
             <div className="text-xs text-muted-foreground">累计出金</div>
             <Money value={totalWithdraw} tone="down" className="mt-1 block text-lg font-medium" />
           </div>

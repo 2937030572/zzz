@@ -98,7 +98,7 @@ export function Stat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+    <div className="rounded-xl border border-border/80 bg-muted/30 px-3 py-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={cn('num mt-1 text-lg font-medium', toneClass[tone])}>
         {renderValue(value, format, signed)}

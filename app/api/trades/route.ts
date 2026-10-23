@@ -41,7 +41,20 @@ function missingColumnOf(error: unknown): string | null {
   return OPTIONAL_COLUMNS.find((column) => text.includes(column)) ?? null;
 }
 
-/** 写入 trades，遇到缺列就剔除该列重试，直到成功或确认是别的错误 */
+/**
+ * CHECK 约束拒绝写入（Postgres 23514 check_violation）。
+ * 场景：库里残留了旧枚举约束（如 trades_direction_check），而 direction 已是用户自定义文本。
+ * 与缺列同策略降级：剔除该字段重试，保证交易本身不丢。
+ */
+function checkViolationColumnOf(error: unknown): string | null {
+  const e = error as { code?: string; message?: string; details?: string } | null;
+  if (!e) return null;
+  const text = `${e.message ?? ''} ${e.details ?? ''}`.toLowerCase();
+  if (e.code !== '23514' && !text.includes('check constraint')) return null;
+  return OPTIONAL_COLUMNS.find((column) => text.includes(column)) ?? null;
+}
+
+/** 写入 trades，遇到缺列 / 约束冲突就剔除该列重试，直到成功或确认是别的错误 */
 async function writeTrade(
   payload: Record<string, unknown>,
   run: (data: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>
@@ -51,7 +64,7 @@ async function writeTrade(
     const result = await run(current);
     if (!result.error) return result.data as Record<string, unknown>;
 
-    const column = missingColumnOf(result.error);
+    const column = missingColumnOf(result.error) ?? checkViolationColumnOf(result.error);
     if (!column || !(column in current)) throw result.error;
 
     current = { ...current };
@@ -65,24 +78,44 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const keyword = searchParams.get('keyword')?.trim();
+    const direction = searchParams.get('direction')?.trim();
+    const strategy = searchParams.get('strategy')?.trim();
+    const status = searchParams.get('status');
+    const rawPage = searchParams.get('page');
+    const rawPageSize = searchParams.get('pageSize');
     const accountId = parseAccountIdParam(searchParams.get('accountId'));
     if (accountId === null) return fail('accountId 不合法', 400);
 
+    const page = rawPage ? Number(rawPage) : 0;
+    const pageSize = rawPageSize ? Number(rawPageSize) : 0;
+    if ((rawPage && (!Number.isInteger(page) || page < 1)) ||
+      (rawPageSize && (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100))) {
+      return fail('分页参数不合法', 400);
+    }
+    if (status && status !== 'open' && status !== 'closed') return fail('状态筛选不合法', 400);
+
     let query = getSupabase()
       .from('trades')
-      .select('*')
+      .select('*', { count: page ? 'exact' : undefined })
       .or(accountScope(accountId))
       .order('date', { ascending: false })
       .order('created_at', { ascending: false });
 
     if (startDate) query = query.gte('date', startDate);
     if (endDate) query = query.lte('date', endDate);
+    if (keyword) query = query.ilike('symbol', `%${keyword}%`);
+    if (direction) query = query.eq('direction', direction);
+    if (strategy) query = query.ilike('strategy', `%${strategy}%`);
+    if (status) query = query.eq('is_closed', status === 'closed');
+    if (page) query = query.range((page - 1) * pageSize, page * pageSize - 1);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw error;
 
     return NextResponse.json({
       trades: (data ?? []).map((row: Record<string, unknown>) => parseTrade(row)),
+      ...(page ? { page, pageSize, total: count ?? 0 } : {}),
     });
   } catch (error) {
     return fail(toPublicError(error, 'Failed to fetch trades'), 500, error);

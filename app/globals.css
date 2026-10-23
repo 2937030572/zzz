@@ -39,7 +39,7 @@
     'Courier New', monospace;
 }
 
-/* 交易笔记主题：纸感中性色 + 单一强调色，涨绿跌红，无特效 */
+/* 交易笔记主题：纸感中性色 + 单一强调色，涨绿跌红。 */
 :root {
   --radius: 0.5rem;
 
@@ -125,7 +125,94 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 8% -12%, oklch(0.92 0.025 150 / 0.34), transparent 26rem),
+      radial-gradient(circle at 94% 0%, oklch(0.94 0.018 78 / 0.55), transparent 23rem);
   }
+}
+
+/* 页面层级：背景保持克制，但把工作区和信息卡片从页面中轻轻托起。 */
+.app-shell {
+  position: relative;
+}
+
+.app-header {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  border-radius: calc(var(--radius) + 0.5rem);
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  box-shadow: 0 14px 38px oklch(0.24 0.008 60 / 0.06);
+}
+
+.app-header::after {
+  position: absolute;
+  top: -3.5rem;
+  right: 7%;
+  width: 11rem;
+  height: 11rem;
+  border-radius: 999px;
+  background: oklch(0.76 0.08 150 / 0.12);
+  content: '';
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+[data-slot='card'] {
+  border-color: color-mix(in oklch, var(--border) 88%, transparent);
+  box-shadow: 0 8px 24px oklch(0.24 0.008 60 / 0.045);
+}
+
+@media (hover: hover) {
+  [data-slot='card'] {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  }
+  [data-slot='card']:hover {
+    border-color: color-mix(in oklch, var(--border) 58%, var(--foreground));
+    box-shadow: 0 14px 32px oklch(0.24 0.008 60 / 0.07);
+    transform: translateY(-1px);
+  }
+}
+
+.hero-balance {
+  background:
+    linear-gradient(135deg, oklch(0.99 0.006 90), var(--card) 55%, oklch(0.97 0.015 150 / 0.35));
+}
+
+.trade-filters {
+  background: linear-gradient(135deg, color-mix(in oklch, var(--muted) 78%, transparent), transparent);
+}
+
+.mobile-trade-card {
+  background: linear-gradient(135deg, var(--card), color-mix(in oklch, var(--muted) 38%, var(--card)));
+  box-shadow: 0 3px 10px oklch(0.24 0.008 60 / 0.035);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) body {
+    background-image:
+      radial-gradient(circle at 8% -12%, oklch(0.32 0.04 150 / 0.2), transparent 26rem),
+      radial-gradient(circle at 94% 0%, oklch(0.28 0.018 78 / 0.2), transparent 23rem);
+  }
+  :root:not(.light) .hero-balance {
+    background: linear-gradient(135deg, oklch(0.26 0.008 60), var(--card) 55%, oklch(0.28 0.024 150 / 0.25));
+  }
+}
+
+.dark .hero-balance {
+  background: linear-gradient(135deg, oklch(0.26 0.008 60), var(--card) 55%, oklch(0.28 0.024 150 / 0.25));
 }
 
 /* 数字统一等宽对齐，避免表格/卡片数字跳动 */

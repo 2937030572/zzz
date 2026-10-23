@@ -20,6 +20,29 @@ ALTER TABLE public.trades
 COMMENT ON COLUMN public.trades.direction IS
   '交易方向（做多/做空/买入/卖出等），由用户自定义的快捷项填充，未填为空串';
 
+-- 2b) 清掉 direction 列上残留的 CHECK 约束（可重复执行，无约束时什么都不做）
+--
+-- direction 是「用户自定义文本」，不是固定枚举：快捷方向可以随时增删改名。
+-- 如果库里残留了 trades_direction_check 之类的枚举约束（常见于手动建列时在
+-- Supabase 面板里勾了取值范围），任何不在名单里的方向都会被数据库拒绝：
+--   ERROR: new row for relation "trades" violates check constraint "trades_direction_check"
+-- 这里动态枚举该列上的全部 CHECK 约束并删除，不依赖具体约束名。
+DO $$
+DECLARE
+  c record;
+BEGIN
+  FOR c IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'public.trades'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%direction%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.trades DROP CONSTRAINT %I', c.conname);
+    RAISE NOTICE '已删除约束 %', c.conname;
+  END LOOP;
+END $$;
+
 -- 3) 列表按日期倒序拉取，direction 不参与筛选，无需单独建索引。
 
 -- ─────────────────────────────────────────────────────────────────────────────

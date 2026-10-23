@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -112,6 +115,8 @@ export function TradeDialog({
   const { values, set, openAmount, level } = form;
   const readOnly = mode === 'view';
   const isCreate = mode === 'create';
+  const [advancedOpen, setAdvancedOpen] = useState(!isCreate);
+  const [reviewOpen, setReviewOpen] = useState(!isCreate || readOnly);
 
   // 编辑历史记录时，若其方向不在当前快捷项里，临时补进下拉，避免显示成空白
   const directionOptions =
@@ -242,7 +247,12 @@ export function TradeDialog({
           </div>
 
           {isCreate ? (
-            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen} className="rounded-lg border border-border bg-muted/30">
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium">
+                策略分级（可选）
+                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', advancedOpen && 'rotate-180')} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-3 border-t border-border p-3">
               <Label>交易分级</Label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Select
@@ -315,7 +325,8 @@ export function TradeDialog({
                   {level.description} · {level.suggestion}
                 </span>
               </div>
-            </div>
+              </CollapsibleContent>
+            </Collapsible>
           ) : (
             <div className="space-y-2">
               <Label htmlFor="trade-strategy">入场策略</Label>
@@ -356,10 +367,25 @@ export function TradeDialog({
               )}
             </div>
             <div className="space-y-2">
-              <Label>开仓金额</Label>
-              <div className="num flex h-9 items-center rounded-md border border-border bg-muted/40 px-3 text-sm">
-                {fmt(openAmount)}
-              </div>
+              <Label htmlFor="trade-open-amount">开仓金额</Label>
+              {readOnly ? (
+                <ReadValue value={fmt(openAmount)} />
+              ) : (
+                <>
+                  <Input
+                    id="trade-open-amount"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder={fmt(form.suggestedOpenAmount)}
+                    value={values.openAmount}
+                    onChange={(e) => set('openAmount', e.target.value)}
+                    className="num"
+                  />
+                  <p className="text-xs text-muted-foreground">留空时按当前余额与仓位估算</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -450,23 +476,28 @@ export function TradeDialog({
             </div>
           )}
 
-          <div className="space-y-2 border-t border-border pt-4">
-            <Label>复盘</Label>
-            {readOnly ? (
-              <ReviewDetail
-                score={values.executionScore}
-                emotion={values.emotion}
-                tags={values.disciplineTags}
-              />
-            ) : (
-              <ReviewEditor
-                score={values.executionScore}
-                emotion={values.emotion}
-                tags={values.disciplineTags}
-                onChange={setReview}
-              />
-            )}
-          </div>
+          <Collapsible open={reviewOpen} onOpenChange={setReviewOpen} className="rounded-lg border border-border">
+            <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium">
+              复盘（可选）
+              <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', reviewOpen && 'rotate-180')} />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="border-t border-border p-3">
+              {readOnly ? (
+                <ReviewDetail
+                  score={values.executionScore}
+                  emotion={values.emotion}
+                  tags={values.disciplineTags}
+                />
+              ) : (
+                <ReviewEditor
+                  score={values.executionScore}
+                  emotion={values.emotion}
+                  tags={values.disciplineTags}
+                  onChange={setReview}
+                />
+              )}
+            </CollapsibleContent>
+          </Collapsible>
         </div>
 
         <DialogFooter>

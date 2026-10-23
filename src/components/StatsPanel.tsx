@@ -95,7 +95,7 @@ export function StatsPanel({
     curLength > 0 ? `${curLength} 连${curType === 'win' ? '胜' : '亏'}` : '—';
   const curTone = curType === 'win' ? 'up' : curType === 'loss' ? 'down' : 'neutral';
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader>
         <CardHeading title="交易统计" hint="仅统计当前账户，按开仓日期筛选区间表现" />
       </CardHeader>

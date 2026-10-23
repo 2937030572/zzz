@@ -68,7 +68,12 @@ const qs = (params: Record<string, string | number | undefined>) => {
 
 const accountsRes = z.object({ accounts: z.array(accountSchema) });
 const balanceRes = z.object({ balance: z.number() });
-const tradesRes = z.object({ trades: z.array(tradeSchema) });
+const tradesRes = z.object({
+  trades: z.array(tradeSchema),
+  page: z.number().int().positive().optional(),
+  pageSize: z.number().int().positive().optional(),
+  total: z.number().int().nonnegative().optional(),
+});
 const tradeWriteRes = z.object({ trade: tradeSchema, balance: z.number() });
 const fundRecordsRes = z.object({ records: z.array(fundRecordSchema) });
 const fundWriteRes = z.object({ record: fundRecordSchema, balance: z.number() });
@@ -99,7 +104,17 @@ export const api = {
   },
 
   trades: {
-    getAll: (params?: { startDate?: string; endDate?: string; accountId?: number }) =>
+    getAll: (params?: {
+      startDate?: string;
+      endDate?: string;
+      accountId?: number;
+      keyword?: string;
+      direction?: string;
+      strategy?: string;
+      status?: 'open' | 'closed';
+      page?: number;
+      pageSize?: number;
+    }) =>
       request(`/trades${qs(params ?? {})}`, undefined, tradesRes),
     create: (data: CreateTradeInput) =>
       request('/trades', { method: 'POST', body: JSON.stringify(data) }, tradeWriteRes),

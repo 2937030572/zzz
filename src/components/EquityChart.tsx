@@ -24,7 +24,7 @@ export function EquityChart({ balance, chartData }: Props) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <Card>
+      <Card className="overflow-hidden">
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer">
             <CardHeading
