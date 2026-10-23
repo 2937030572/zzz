@@ -262,7 +262,7 @@ export default function TradingApp() {
   const accounts: Account[] = data.accounts;
 
   return (
-    <main className="app-shell mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
+    <main className="app-shell w-full min-w-0 px-3 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-8 2xl:px-12">
       <Toaster position="top-center" richColors closeButton />
       <header className="app-header mb-6 flex flex-wrap items-end justify-between gap-4 px-5 py-5 sm:px-6">
         <div className="relative z-10">
@@ -362,6 +362,7 @@ export default function TradingApp() {
       )}
 
       <TradeDialog
+        key={mode ?? 'closed'}
         open={mode !== null}
         onOpenChange={(open) => {
           if (!open) {

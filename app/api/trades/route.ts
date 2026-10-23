@@ -89,6 +89,9 @@ export async function GET(request: Request) {
 
     const page = rawPage ? Number(rawPage) : 0;
     const pageSize = rawPageSize ? Number(rawPageSize) : 0;
+    if (Boolean(rawPage) !== Boolean(rawPageSize)) {
+      return fail('page 与 pageSize 必须同时提供', 400);
+    }
     if ((rawPage && (!Number.isInteger(page) || page < 1)) ||
       (rawPageSize && (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100))) {
       return fail('分页参数不合法', 400);

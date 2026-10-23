@@ -56,8 +56,14 @@ export function useTradeBrowser(accountId: number) {
         endDate: filters.endDate,
       });
       if (id !== requestId.current) return;
+      const nextTotal = result.total ?? 0;
+      const lastPage = Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
       setTrades(result.trades);
-      setTotal(result.total ?? 0);
+      setTotal(nextTotal);
     } catch (err) {
       if (id !== requestId.current) return;
       setTrades([]);
@@ -69,9 +75,9 @@ export function useTradeBrowser(accountId: number) {
   }, [accountId, filters, page]);
 
   useEffect(() => {
-    // 请求函数会在异步回调中更新状态；与主数据加载 hook 保持同一模式。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
+    // 文本筛选等待用户暂停输入后再查询，翻页和下拉筛选也沿用同一请求收敛逻辑。
+    const timer = window.setTimeout(() => void refresh(), 250);
+    return () => window.clearTimeout(timer);
   }, [refresh]);
 
   const updateFilters = useCallback((patch: Partial<TradeFilters>) => {

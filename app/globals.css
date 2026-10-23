@@ -126,6 +126,7 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     min-height: 100vh;
+    overflow-x: hidden;
     background-image:
       radial-gradient(circle at 8% -12%, oklch(0.92 0.025 150 / 0.34), transparent 26rem),
       radial-gradient(circle at 94% 0%, oklch(0.94 0.018 78 / 0.55), transparent 23rem);
@@ -135,6 +136,8 @@
 /* 页面层级：背景保持克制，但把工作区和信息卡片从页面中轻轻托起。 */
 .app-shell {
   position: relative;
+  width: 100%;
+  min-width: 0;
 }
 
 .app-header {
@@ -171,8 +174,21 @@
 }
 
 [data-slot='card'] {
+  min-width: 0;
   border-color: color-mix(in oklch, var(--border) 88%, transparent);
   box-shadow: 0 8px 24px oklch(0.24 0.008 60 / 0.045);
+}
+
+[data-slot='card-header'],
+[data-slot='card-content'] {
+  min-width: 0;
+}
+
+/* 图表和表格必须以父容器为边界计算宽度，避免超宽屏拉伸或窄屏横向撑破页面。 */
+.recharts-responsive-container,
+.recharts-wrapper {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (hover: hover) {
